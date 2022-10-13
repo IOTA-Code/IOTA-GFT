@@ -33,24 +33,37 @@
 //  GLOBAL variables and definitions
 //=======================================
 
-//****************************************
-// Operating Modes
-//  PPS mode => flash on PPS signal
-//	EXP mode => flash on EXP interrupt (exposure signal)
+//*****************************
+//  Operating Mode
 //
-//	fEventDefined => True if an future event definition active
+//  InitMode => initializing the device
+//  WaitingForGPS => waiting for valid GPS data and PPS
+//  Timing => normal timing operation
+//  FatalError => fatal error occured
 //
 enum OperatingMode
 {
   InitMode,               // => Power up initialization
   WaitingForGPS,          // => Waiting to receive GPS data
-  Syncing,                // => Synchronizing internal time base with GPS data
-  Ready,                  // => Synced and ready
-  FatalError,             // => Fatal error occurred
+  Syncing,                // => syncing to PPS time
+  TimeValid,              // => Timing data is OK
+  FatalError              // => Fatal error occurred
+};
+volatile OperatingMode DeviceMode;    // current operating mode
+
+//****************************************
+// Flashing Modes
+//  PPS mode => flash on PPS signal
+//	EXP mode => flash on EXP interrupt (exposure signal)
+//
+//	fEventDefined => True if an future event definition active
+//
+enum FlashingMode
+{
 	PPS,
 	EXP
 };
-volatile OperatingMode FlashMode;		// current flashing mode
+volatile FlashingMode FlashMode;		// current flashing mode
 
 #define SYNC_SECONDS 4                // # of seconds for syncing to GPS time
 volatile short int TimeSync;          // ( > 0 ) => we are syncing to GPS sentence times = # of seconds remaining for sync (small value so no problem with ints)
@@ -108,14 +121,15 @@ volatile int offsetUTC_Current = -1;      // current/valid GPS-UTC offset
 //***************
 // PPS event
 //
+volatile unsigned long tk_PPS_valid;  // time of last VALID PPS int
+volatile unsigned long tk_PPS;        // tick "time" of most recent PPS int
+
+
 volatile boolean pps_led_state = false;       // current state of on-board LED
 volatile unsigned long pps_time;
 volatile unsigned long pps_count = 0;         // # of pps ints since power on
 volatile boolean pps_new = false;
 volatile boolean pps_flash = false;           // true IFF LED was flashed with this PPS
-
-volatile boolean timer45_error = false;       // true if we detect a mismatch between timer 4 and 5
-volatile unsigned long timer45_values;              // high 16 bits = TCNT5 , low 16 bits = TCNT4
 
 //****************************
 // LED / Flash variables
@@ -204,76 +218,15 @@ struct {
   uint8_t cLeap[3];       // leap seconds field from sentence
 } gpsPUBX04;
 
+
+//*********
+//  INPUTS
+//
+volatile bool blnEchoNMEA = false;
 volatile bool blnEchoPPS = false;
 char msgEchoPPS[] = "<P>TTTTTTTT</P>\n";
 #define len_msgEchoPPS 16
 
-volatile bool blnEchoVSYNC = false;
-char msgEchoVSYNC[] = "<V>TTTTTTTT</V>\n";
-#define len_msgEchoVSYNC 16
-
-volatile bool blnEchoNMEA = true;
-
-
-
-//  List for NMEA sentences (managed as a circular buffer)
-//    S_BufferHead = first valid entry in buffer
-//    S_BufferTail = next spot to use in buffer
-//    S_Count = # of valid entries
-//
-typedef struct
-{
-  unsigned long RecvTime;     // time of first char received for this sentence
-  int IdxFirst;               // starting index of this sentence in the NMEA char buffer (-1 => empty)
-  boolean Complete;           // is this sentence complete?
-} NMEA_Sentence;
-
-#define S_BufferSize 8
-volatile NMEA_Sentence S_Buffer[S_BufferSize];
-volatile int S_BufferHead = -1;
-volatile int S_BufferTail = 0;
-volatile int S_Count = 0;       // # of entries in use (including partial sentence
-volatile int S_Current = -1;    // current entry for reading data ( -1 > no active sentence now )
-
-//  Buffer for NMEA sentence characters
-//    N_Buffer[] - buffer holding sentences
-//    N_BufferHead - head of used portion of buffer
-//    N_BufferTail - tail - next spot for a character
-//    N_Count = # of characters in the buffer
-
-#define N_BufferSize 500    // buffer of sentence chars 
-                            //   must be greater than 120 (best is > 150) to capture one full sentence
-volatile char N_Buffer[N_BufferSize];
-volatile int N_BufferHead = -1;
-volatile int N_BufferTail = 0;
-volatile int N_Count = 0;
-volatile boolean N_Start = false;      // true after seeing first $
-
-// Event buffer
-//    E_Buffer[] - buffer holding sentences
-//    E_BufferHead - head of used portion of buffer
-//    E_BufferTail - tail - next spot to use in buffer
-//
-#define E_BufferSize 20
-volatile unsigned long E_Buffer[E_BufferSize];
-volatile int E_BufferHead = -1;
-volatile int E_BufferTail = 0;
-volatile int E_Count = 0;
-
-volatile boolean OneTime = true;
-
-volatile int mCount = 0;
-
-// debug flags
-//
-boolean f_Save1 = false;
-boolean f_Save2 = false;
-boolean f_Save3 = false;
-boolean f_Save4 = false;
-
-volatile unsigned long ulTime1 = 0;
-volatile unsigned long ulTime2 = 0;
-volatile int tailTest = -1;
 
 
 //===============================================================
@@ -294,7 +247,8 @@ void setup()
 
   // initializing now...
   //
-  FlashMode = InitMode;
+  DeviceMode = InitMode;
+  FlashMode = PPS;
 
   // set PIN modes
   //
@@ -398,45 +352,51 @@ void setup()
 
   GTCCR = 0;    // RESTART prescaler and all synchronous timers
   
-
-  //*********************
-  // init data buffers
-  //
-  ClearBuffers();
-
   //******************
   //  Waiting for GPS
+  //  - Wait for PPS interrupts AND NMEA data valid 
+  //  - ReadGPS will parse the NMEA data and set valid status for NMEA data
+  //  - after NMEA data valid, next PPS ISR will change the device mode to "Syncing" 
   //
-  FlashMode = WaitingForGPS;
+  DeviceMode = WaitingForGPS;
   Serial.println("Waiting for GPS...");
 
   tBegin = millis();
-  while(FlashMode != Syncing)
+  while( DeviceMode == WaitingForGPS)
   {
-    // wait up to 10 minutes for GPS
+    // get pending serial data from GPS
+    //
+    ReadGPS();
+
+    // wait up to 10 minutes for valid GPS
     //
     tNow = millis();
     if ((tNow - tBegin) > (10 * 60000))
     {
       Serial.println("Timeout waiting for GPS.");
-      FlashMode = FatalError;
+      DeviceMode = FatalError;
       while(1);
     }
   } // end of waiting for GPS 
 
   //******************
-  //  Now wait for sync to end
+  //  Now wait for Sync to finish
+  //  - PPS ISR will change mode to TimeValid after sync period finishes 
   //
   tBegin = millis();
-  while(FlashMode != Ready)
+  while(FlashMode == Syncing)
   {
+    // get pending serial data from GPS
+    //
+    ReadGPS();
+
     // wait up to 10 minutes for Sync
     //
     tNow = millis();
     if ((tNow - tBegin) > (10 * 60000))
     {
       Serial.println("Sync failed.");
-      FlashMode = FatalError;
+      DeviceMode = FatalError;
       while(1);
     }
   }
@@ -444,56 +404,16 @@ void setup()
   //*****************
   //  Now start timing...
   //
-  FlashMode = PPS;      // start in PPS mode for now
 
 } // end of setup
 
-
-//=====================================
-// ClearBuffers - clear out NMEA and command buffer
-//=====================================
-void ClearBuffers()
-{
-  int tmp;
-
-  // reset command stream from PC
-  //     clear incomming data buffer from PC
-  //
-  while( Serial.available() )
-  {
-    tmp = Serial.read();
-  }
-  strCommand[0] = 0;  // no command
-  Cmd_Next = 0;
-
-  // clear NMEA buffers
-  //
-  S_BufferHead = -1;
-  S_BufferTail = 0;
-  S_Count = 0;
-  S_Current = -1;
-  N_Count = 0;
-  N_BufferHead = -1;
-  N_BufferTail = 0;
-  N_Start = false;
-
-  // clear event buffers
-  //
-  noInterrupts();
-  E_Count = 0;
-  E_BufferHead = -1;
-  E_BufferTail = 0;
-  interrupts();  
-  
-} // end of ClearBuffers
 
 //==========================================================================
 //  LOOP
 //
 //  Basic algorithm
 //	- check for button press
-//  - Keep checking for NMEA data until there is none
-//  - Then output message buffers (earliest time stamp first)
+//  - Keep checking for GPS data until there is none
 //  - Then check for incomming commands from PC
 //  - Then execute PC commands
 //
@@ -519,31 +439,7 @@ void loop()                     // run over and over again
   int NextBuffer;     // 0 => nothing to do, 1=> NMEA, 2=> pps, 3=> external
 
 
-  //******************************************************
-  //  check for errors
-  //
-  if (timer45_error)
-  {
-    ultohex(pps_string+1,timer45_values);
-    pps_string[13] = 'X';
-    
-    timer45_error = false;    // clear it
-
-    // report it
-    //
-    for( int i = 0; i < 20; i++ )
-    {       
-      if ((c=pps_string[i]) == 0)
-        break;
   
-      Serial.print(c);
-    }
-
-    // clear error in string now
-    //
-    pps_string[13] = ' ';
-  }
-
   //******************************************************
   // check for Button Press (with debouncing)
   //   => if not flashing, initiate a flash
@@ -569,123 +465,13 @@ void loop()                     // run over and over again
 
 
   //******************************************************
-  //  check for pending NMEA data
+  //  check for pending data from GPS
   //
-  ReadNMEA();
+  ReadGPS();
 
   //******************************************************
-  // Output messages
+  // Output logging info
   //
-  // Find the buffer entry with the earliest timestamp
-  //
-  NextBuffer = 0;
-  
-  // check external buffer first
-  //
-  if (E_Count > 0)
-  {
-    firstTime = E_Buffer[E_BufferHead];
-    NextBuffer = 3;
-  }
-
-  // now check pps
-  //
-  if (pps_new)
-  {
-    if (NextBuffer == 0)
-    {
-      firstTime = pps_time;
-      NextBuffer = 2;
-    }
-    else
-    {
-      // we have a time, is the pps time earlier?
-      //   comparing unsigned, must also watch for time rollover
-      //   hopefully this logic works...
-      //
-      if ((pps_time - firstTime) > 0x80000000)
-      {
-        // pps time is earlier
-        firstTime = pps_time;
-        NextBuffer = 2;
-      }
-    }
-
-  }  // end of pps check
-
-  // check NMEA sentence times
-  //
-  if (S_Count > 0)
-  {
-    // check first NMEA sentence
-    //  - first - is this sentence complete? 
-    //    we only send NMEA sentences AFTER they are complete
-    //
-    if (S_Buffer[S_BufferHead].Complete)
-    {
-      tmpTime = S_Buffer[S_BufferHead].RecvTime;
-      
-      if (NextBuffer == 0)
-      {
-        firstTime = tmpTime;
-        NextBuffer = 1;
-      }
-      else
-      {
-        if ((tmpTime - firstTime) > 0x80000000)
-        {
-          firstTime = tmpTime;
-          NextBuffer = 1;
-        }
-      }
-    } // end of check for complete sentence
-  } // end of checking NMEA sentences
-
-  //
-  // Now we may have a time message to send out
-  //
-  switch( NextBuffer)
-  {
-    // output NMEA sentence
-    //
-    case 1 :
-      S_SendFromBuffer();
-      break;
-
-    // output pps time
-    //
-    case 2:
-      ultohex(pps_string+1,pps_time);
-      if (pps_flash)
-      {
-        ustohex(pps_string+14, (unsigned short)Pulse_Duration);
-      }
-      else
-      {
-        strncpy(pps_string + 14, "0   ",4);
-      }
-      for( int i = 0; i < 20; i++ )
-      {       
-        if ((c=pps_string[i]) == 0)
-          break;
-    
-        Serial.print(c);
-      }
-      pps_new = false;
-      break;
-
-    // output external time
-    //
-    case 3:
-      E_SendFromBuffer();
-      break;
-
-    // do nothing
-    //
-    default:
-      break;
-      
-  } // end of outputting message
 
   //***********************
   //  now check for an incomming command
@@ -700,7 +486,7 @@ void loop()                     // run over and over again
   {
     // ECHO command string to USB port
     //
-    ultohex(time_string+1,cmd_time);
+    ultohexA(time_string+1,cmd_time);
     for( int i = 0; i < 20; i++ )
     {       
       if ((c=time_string[i]) == 0)
@@ -735,143 +521,507 @@ void loop()                     // run over and over again
 
 } // end of loop()
 
-//=====================================
-//  ReadNMEA - get pending NMEA data
-//======================================
+
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
-void ReadNMEA()
+//  INTERRUPT SERVICE ROUTINES
+//
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+//========================================
+// ISR for LED done (timer 3 output compare A interrupt)
+//=========================================
+ISR(TIMER3_COMPA_vect)
 {
-  char c;
-  unsigned long cTime;
-  int idx;
 
-  // is a char ready?
+  // turn OFF LED & decrement count
   //
-  while (Serial1.available() > 0)
-  {
+    // now turn off OC0B
+  TCCR0A = (1<< COM0B1);   // normal mode & CLEAR 0C0B on match
+  TCCR0B = (1<< FOC0B) | (1<< CS02) | (1<< CS01) | (1<< CS00);     // Force 0C0B low
+    // now setup for next incoming 1pps to SET 0C0B
+    //
+  TCCR0A = (1<< COM0B1) | (1<< COM0B0);   // normal mode & SET 0C0B on match
 
-    // char ready, process it
-    //
-      
-    c = Serial1.read();
+
+  digitalWrite(LED_PIN,false);
+  LED_ON = false;
+
+  // turn OFF Timer 3
+  //
+  TCCR3B = (1 << WGM32);    // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
   
-    // time of this character (from timer 4)
+} // end of LED_done_interrupt
+
+//========================================
+// ISR for Timer 4 overflow
+//=========================================
+ISR( TIMER4_OVF_vect)
+{
+  
+  timer4_ov++;   // just increment overflow count
+  
+} // end of Timer4 overflow vector
+
+//=================================================================
+// ISR for Timer 4 input capture interrupt - capture PPS input 
+//==================================================================
+ISR( TIMER4_CAPT_vect)
+{
+
+  unsigned long timeCurrent;
+  unsigned long timePrev;
+  unsigned long timeDiff;
+  unsigned long ppsDiff;
+  bool blnIntervalError;
+
+  unsigned long LED_time;
+
+ 
+  //*****************
+  //  If init mode or FatalError, just leave...
+  //
+  if ((DeviceMode == FatalError) || (DeviceMode == InitMode))
+  {
+    // do nothing in these modes
+    return;
+  }
+
+  //******************
+  // Check for start/end of LED pulse
+  //
+  if (Pulse_Duration == 0)
+  {
+	  // no more flashes left
+	  //
+    digitalWrite(LED_PIN,false);            // LED OFF
+    LED_time = GetTicks(CNT4);              // time LED turned OFF
+    LED_ON = false;
+    pps_flash = false;                      // flash OFF at this PPS
+  }
+  else
+  {
+    // 
+    // Pulse active => LED ON
     //
-    noInterrupts();
-//    cTime = ((unsigned long)timer4_ov << 16) + (unsigned long)TCNT4;
-    cTime = GetTicks(CNT4);
-    interrupts();
-    
-    // we have a new character ...
-    //   '\n' => end of current NMEA string
-    //   '$' => start of new NMEA string
-    //   else -> just a char in the NMEA string
-    //
-    //   on start of NMEA - place [time] in buffer followed by $
-    //
-    
-    if (c == '$')
+    digitalWrite(LED_PIN,true);             // LED ON 
+    LED_time = GetTicks(CNT4);              // time LED turned ON
+    pps_flash = true;
+
+    if (!LED_ON)
     {
-  
-      if (S_Current >= 0)
-      {
-        Serial.println("");
-        Serial.println("ERROR 0");
-        Serial.println("");
-//        DebugBuffers();
-        return;
-      }
-      
-      // START of NMEA string
-      //    get new entry in list 
+      // LED Pulse begins
       //
-      S_Current = S_GetEntry();
-      
-      S_Buffer[S_Current].RecvTime = cTime;
-      S_Buffer[S_Current].Complete = false;
-       
-      idx = N_SaveToBuffer(c);
-      if (idx < 0)
+      LED_ON = true;
+    }
+
+    // one less second left in this pulse
+    //
+    Pulse_Duration--;
+
+  } // end of turning on LED
+
+  //************************
+  // Get TIME of PPS event from input capture register
+  //
+  timeCurrent = GetTicks(IC4);
+
+  //************************************
+  //  Validate PPS interval
+  //    if too long or too short => Error Mode (PPS error)
+  //   
+
+  // save the previous value for compare
+  //
+  timePrev = tk_PPS;
+  tk_PPS = timeCurrent;
+
+  // delay from last PPS
+  //
+  if (timeCurrent > timePrev)
+  {
+    timeDiff = timeCurrent - timePrev;
+  }
+  else
+  {
+    timeDiff = 0 - (timePrev - timeCurrent);
+  }
+  
+  // PPS interval between now and the last PPS
+  //   save this to be used by averaging code
+  //
+  ppsDiff = timeDiff;       
+
+  // check interval since last PPS
+  // if Syncing , check delay since last PPS pulse...
+  //  if too short or too long, restart SYNC
+  // In other modes... just keep going and let the post-processing catch the errors
+  //
+  blnIntervalError = false;
+  if (DeviceMode == Syncing)
+  {
+    if ((timeDiff < (Timer_Second - CLOCK_TOLERANCE)) || (timeDiff > (Timer_Second + CLOCK_TOLERANCE)))
+    {
+      // report error?
+      //
+//*** TBD
+
+      // sync error - restart sync
+      //
+      tk_pps_interval_total = 0;
+      tk_pps_interval_count = 0;
+
+      DeviceMode = Syncing;
+      TimeSync = SYNC_SECONDS;
+
+
+    }
+  }
+  else if (DeviceMode == TimeValid) 
+  {
+    if ((timeDiff < (Timer_Second - PPS_TOLERANCE)) || (timeDiff > (Timer_Second + PPS_TOLERANCE)))
+    {
+      // report error?
+      //
+//*** TBD
+
+      // sync error - restart sync
+      //
+      DeviceMode = Syncing;
+      TimeSync = SYNC_SECONDS;
+
+      tk_pps_interval_total = 0;
+      tk_pps_interval_count = 0;
+    }
+  }
+
+  // ***** PPS validated
+  //
+  tk_PPS_valid = tk_PPS;
+
+
+  //********************************
+  // DeviceMode logic
+  //
+  //  *TimeValid
+  //    Update internal time values
+  //
+  //  *WaitingForGPS Mode
+  //    - if GPS data good
+  //        move to Syncing mode
+  //    - else
+  //        leave (keep waiting)
+  //
+  //  *Syncing Mode
+  //    - validate data and restart if necessary
+  //
+  //  *TimeValid Mode
+  //    - check for GPS/UTC switch
+  //
+  //
+  //
+  if ( DeviceMode == TimeValid )
+  {
+    int ErrorFound;
+    
+    // TimeValid Mode
+    //
+
+    // update PPS interval statistics
+    //
+    tk_pps_interval_total += ppsDiff;
+    tk_pps_interval_count++;
+
+    // check for switch from GPS to UTC time
+    //
+    if (!time_UTC)
+    {
+      // time has been GPS based
+      //  - do we have a valid almanac now?
+      //
+      if (gpsPUBX04.valid && gpsPUBX04.blnLeapValid)
       {
-        // unexpected error
+        // aha... we now have a current value for of GPS-UTC offset
+        //  decrement time by this number of seconds and mark it as UTC time now...
         //
-        Serial.println("");
-        Serial.println("ERROR 1");
-        Serial.println("");
-        DebugBuffers();
-        return;
-      }
-      else
-      {
-        S_Buffer[S_Current].IdxFirst = idx;
+        for( int i = 0; i < gpsPUBX04.usLeapSec; i++)
+        {
+          SecDec();            
+        }
+
+        // now verify that this time matches the values from the previous RMC sentence (which should now be UTC)
+        //
+        if ((gpsRMC.hh != sec_hh) || (gpsRMC.mm != sec_mm) || (gpsRMC.ss != sec_ss))
+        {
+          // Opps! the internal UTC time does not match the RMC values... display error and start over again with a new SYNC
+          //
+          ErrorFound = 6;
+          DeviceMode = Syncing;
+          TimeSync = SYNC_SECONDS;
+    
+          tk_pps_interval_total = 0;
+          tk_pps_interval_count = 0;
+          
+          // Error message
+          //
+//*** TBD          
+          return;
+        }
+
+        // set flag to indicate we are now on UTC time
+        //
+        time_UTC = true;      // UTC now
       }
     }
-    else if ( c == '\n' )
+
+    // NOW increment the time by one second for this PPS
+    //
+    SecInc();
+    
+  }
+  else if ( DeviceMode == WaitingForGPS )
+  {
+    // WaitingForGPS mode
+    //
+    
+    // we are waiting to synchronize
+    //  if we have a valid time from the serial data, start the process
+    //
+    if ((!gpsRMC.valid) || (!gpsPUBX04.valid))
     {
-      // end of sentence
-      //
-      if (S_Current < 0)
-      {
-        // but we weren't in a sentence?
-        //
-        Serial.println("");
-        Serial.println("ERROR 6");
-        Serial.println("");
-        // whoops!
-        //
-        return;
-      }
-  
-      // save the character
-      //
-      idx = N_SaveToBuffer(c);
-      if (idx < 0)
-      {
-        // unexpected error
-        //
-        Serial.println("");
-        Serial.println("ERROR 2");
-        Serial.println("");
-        DebugBuffers();
-        return;
-      }
-  
-      // finalize the status of the sentence
-      //
-      S_Buffer[S_Current].Complete = true;
-  
-      // Now that it is complete... we have no "current" sentence
-      //
-      S_Current = -1;
+      // no valid RMC or PUBX04, keep waiting
+      return;
+    }
+    else if ((gpsRMC.mode != 'A') && (gpsRMC.mode != 'D'))
+    {
+      // wait for a good fix
+      return;
     }
     else
     {
-      // all other characters
-      //   ignore if not in a sentence...
+      // RMC time should correspond to the PREVIOUS second
       //
-      if (S_Current >= 0)
-      {
-        // save the character
-        //
-        idx = N_SaveToBuffer(c);
-        if (idx < 0)
-        {
-          // unexpected error
-          //
-          Serial.println("");
-          Serial.println("ERROR 3");
-          Serial.println("");
-          DebugBuffers();
-          return;
-        }
-      }
+      sec_ss = gpsRMC.ss;
+      sec_mm = gpsRMC.mm;
+      sec_hh = gpsRMC.hh;
+      SecInc();               // bump the count by one to match the second for THIS PPS signal    
+    }
+
+    // GPS data looks good => move to Syncing mode (we will check the next few seconds for consistency)
+    //
+    DeviceMode = Syncing;
+    TimeSync = SYNC_SECONDS;
+    tk_pps_interval_total = 0;
+    tk_pps_interval_count = 0;
+        
+  }
+  else if ( DeviceMode == Syncing )
+  {
+    int ErrorFound;
+    
+    // SYNCING mode
+    //
+    ErrorFound = 0;
             
-  }  // end of handling a char read
-  } // end of while loop for character available
-} // end of ReadNMEA
+    // validation 1 : was last PPS about one second away?  we checked this earlier
+    //
+
+    // validation 2: gpsRMC, PUBX04 good?
+    //
+    if ((!gpsRMC.valid) || (!gpsPUBX04.valid))
+    {
+      ErrorFound = 1;
+    }
+    else if ((gpsRMC.mode != 'A') && (gpsRMC.mode != 'D'))
+    {
+      ErrorFound = 3;
+    }
+    else
+    {
+      // compare time of RMC, PUBX04 vs time of PPS
+      //
+      if (timeCurrent > tk_GPSRMC)
+      {
+        timeDiff = timeCurrent - tk_GPSRMC;
+      }
+      else
+      {
+        timeDiff = 0 - (tk_GPSRMC - timeCurrent);
+      }
+      
+      if (timeDiff > Timer_Second)
+      {
+        // oops... this RMC was sent MORE than one second befor this PPS
+        ErrorFound = 4;    
+      }
+      else
+      {
+        if (timeCurrent > tk_PUBX04)
+        {
+          timeDiff = timeCurrent - tk_PUBX04;
+        }
+        else
+        {
+          timeDiff = 0 - (tk_PUBX04 - timeCurrent);
+        }
+        
+        if (timeDiff > Timer_Second)
+        {
+          // oops... this RMC was sent MORE than one second befor this PPS
+          ErrorFound = 5;
+        }
+        
+      } // end of PUBX04 check 
+
+      // ok... both RMC and PUBX04 look good
+      
+    } // end of checking timing to RMC/PUBX sentence
+    
+    
+    // validation 3 : check the time stamp
+    //   we have not yet incremented the time, so it should match the current NMEA value
+    //   * note... if UTC offset updates in this timeframe it will break the sync ... but that is OK... it just restarts...
+    //
+    if (ErrorFound == 0)
+    {
+      if ((gpsRMC.hh != sec_hh) || (gpsRMC.mm != sec_mm) || (gpsRMC.ss != sec_ss))
+      {
+        ErrorFound = 2;
+      }
+      else if ((gpsRMC.mode != 'A') && (gpsRMC.mode != 'D'))
+      {
+        ErrorFound = 3;
+      }
+    }
+    
+    // if error, report it and return
+    //
+    if (ErrorFound > 0)
+    {
+      // failed the test - report error and restart sync
+      //
+      DeviceMode = Syncing;
+      TimeSync = SYNC_SECONDS;
+
+      tk_pps_interval_total = 0;
+      tk_pps_interval_count = 0;
+      
+      // Error message
+      //
+//*** TBD ****
+
+      // and done with this PPS logic
+      return;
+    }
+    
+    // this pps passed the test: bump the time and decrement the count
+    //
+    SecInc();  
+    TimeSync --;
+    
+    // are we all done with the sync?
+    //
+    if (TimeSync == 0)
+    {
+      // Set internal time according to most recent PPS and Leap Second status
+      //
+
+      // RMC time should correspond to the PREVIOUS second
+      //
+      sec_ss = gpsRMC.ss;
+      sec_mm = gpsRMC.mm;
+      sec_hh = gpsRMC.hh;
+      SecInc();               // bump the count by one to match the second for THIS PPS signal
+      
+      // check for leap second status of the time from RMC
+      //
+      if (gpsPUBX04.blnLeapValid)
+      {
+        // we have an almanac => UTC time
+        //
+        time_UTC = true;
+      }
+      else
+      {
+        // using default leap seconds... increment time by leap seconds to match GPS time
+        //
+        time_UTC = false;
+        for(int i = 0; i < gpsPUBX04.usLeapSec; i++)
+        {
+          SecInc();
+        }
+        
+      } // end of check for leap second status
+
+      // update PPS statistics
+      //
+      tk_pps_interval_ave = tk_pps_interval_total / tk_pps_interval_count;      // compute the average delay between PPS intervals
+      Timer_Second = tk_pps_interval_ave;                                       // use this average as the new definition of a second
+      PPS_TOLERANCE = Timer_Second / 1000;                                      // reset PPS tolerance to 1ms
+      
+      tk_pps_interval_total = 0;                                                // reset
+      tk_pps_interval_count = 0;
+
+      // We now have a valid time base... 
+      //
+      DeviceMode = TimeValid;
+      
+    }  // end of TimeSync = 0 section
+
+  }
+  else
+  {
+    // WHAT???
+    //
+    DeviceMode = FatalError;    
+        
+    //  failure message
+    //
+//*** TBD ***
+    
+  }  // end of check for current mode
+
+  
+} // end of PPS/Timer4 input capture interrupt
+
+//========================================
+// ISR for Timer 5 overflow
+//=========================================
+ISR( TIMER5_OVF_vect)
+{
+  
+  timer5_ov++;   // just increment overflow count
+  
+} // end of Timer5 overflow vector
+
+//=================================================================
+// ISR for Timer 5 input capture interrupt - capture external EVENT input 
+//==================================================================
+ISR( TIMER5_CAPT_vect)
+{
+  unsigned long cTime;
+
+  // get current time and save it to the event buffer
+  //
+  cTime = GetTicks(IC5);
+
+  
+} // end of Timer5 input capture interrupt
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//
+//   USB comm
+//
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 
 //=====================================
-//  ReadCMD - get pending command data
+//  ReadCMD - get input from USB port
+//  
+//  pick up single line "commands" sent via the USB port
+//  after reading \n (newline), sets Cmd_Next = -1 and returns
+//
 //======================================
 void ReadCMD()
 {
@@ -905,7 +1055,6 @@ void ReadCMD()
       // get time from timer 4 count
       //
       noInterrupts();
-//      cmd_time = ((unsigned long)timer4_ov << 16) + (unsigned long)ICR4;
       cmd_time = GetTicks(CNT4);
       interrupts();
       
@@ -938,388 +1087,6 @@ void ReadCMD()
   
 } // end of ReadCMD
 
-//===========================================================================
-// N_SaveToBuffer - save a character to the next open spot in the NMEA buffer
-//   returns buffer index for this character (-1 => ERROR)
-//
-//   notes:
-//    * if we run out of space, discard previous "first" sentence entirely so
-//      all "old" sentences are full sentences.
-//
-//===========================================================================
-int N_SaveToBuffer(char cIn)
-{
-  int idx;
-    
-  // Check for full buffer
-  //
-  if (N_BufferTail == N_BufferHead)
-  {
-    // the buffer is FULL
-    //  we are going to overwrite the first char of the first sentence
-    //  so we must now invalidate the first sentence entirely and dump all of its characters
-    //  ** check for situation where ONE sentence has filled the entire buffer - should not happen!
-    //
-    if (S_Count <= 1)
-    {
-      // oops!  - we have only one sentence in progress
-      //  => clear everything and start over
-      //
-      Serial.println("");
-      Serial.print("ERROR 4 :");
-      Serial.println(cIn);
-      Serial.println("");
-      DebugBuffers();
-
-      N_BufferHead = -1;
-      N_BufferTail = 0;
-      N_Count = 0;
-      S_BufferHead = -1;
-      S_BufferTail = 0;
-      S_Count = 0;
-      S_Current = -1;
-      return(-1);
-    }
-    else
-    {
-      // ok - we do have more than one entry in the sentence list/buffer
-      //    Remove the first entry from the sentence list
-      //    and set char head pointer to first char in new first sentence
-      //
-      
-      S_DeleteHead(); // delete head entry in sentence list (invalid now)
-
-      N_BufferHead = S_Buffer[S_BufferHead].IdxFirst;   // and make head of char buffer = head of new first sentence
-      N_Count = N_BufferTail - N_BufferHead;            // update char count
-      if (N_Count < 0)
-        N_Count = N_Count + N_BufferSize;
-    }
-   
-    // char Count remains the same...
-  }
-  else
-  {
-    // now check for start of buffer
-    //
-    if (N_Count == 0)
-    {
-      N_BufferHead = N_BufferTail;    // set head ptr
-    }
-
-    // we had a free spot, update the count
-    N_Count++;
-  }
-
-  // copy char into Buffer
-  //
-  N_Buffer[N_BufferTail] = cIn;
-  idx = N_BufferTail;
-  
-  // update BufferTail (with wraparound)
-  //
-  N_BufferTail++;
-  if (N_BufferTail == N_BufferSize)
-    N_BufferTail = 0;
-
-  return( idx );      // return index for the saved character
-
-} // end of N_SaveToBuffer
-
-//===========================================================================
-// N_SendFromBuffer - send ONE sentence from NMEA Buffer to serial output
-//      NOTE:
-//        * free space in buffer as data is sent
-//        * checks for incoming NMEA data while sending characters
-//===========================================================================
-void N_SendFromBuffer()
-{
-  char c;
-  int cCount = 0;
-  
-  while( N_Count > 0 )
-  {
-    
-    // grab char
-    //
-    c = N_Buffer[N_BufferHead];
-
-    // update pointers
-    //
-    N_Count--;                  // one less char
-    if (N_Count == 0)
-    {
-      // buffer is empty, reset it
-      //
-      N_BufferHead = -1;
-      N_BufferTail = 0;
-    }
-    else
-    {
-      N_BufferHead++;
-      if (N_BufferHead == N_BufferSize)
-        N_BufferHead = 0;
-    }
-    
-    // send the head character
-    //
-    Serial.print(c);
-    
-    // check for end of string
-    //
-    if (c == '\n')
-      break;      // all done
-   
-  } // end of loop through string
-  
-} // end of N_SendFromBuffer
-
-
-//===========================================================================
-// E_SaveToBuffer - save a time to the next open spot in the event buffer
-//
-//===========================================================================
-void E_SaveToBuffer(unsigned long ul)
-{
-
-  // Check for full buffer 
-  //   if the tail "catches" the head, bump up the head one spot (delete the first entry in the buffer)
-  //
-  if (E_BufferTail == E_BufferHead)
-  {
-    // Buffer is full
-    //  - but we are saving to the former head location - move the head forward
-    
-    E_BufferHead++;
-    if (E_BufferHead == E_BufferSize)
-      E_BufferHead = 0;
-      
-    // entry Count remains the same...
-  }
-  else
-  {
-    // buffer NOT full
-    // now check for start of buffer
-    //
-    if (E_Count == 0)
-    {
-      E_BufferHead = E_BufferTail;    // set head ptr
-    }
-
-    // we had a free spot, update the count
-    E_Count++;
-  }
-  
-  // copy data into Buffer
-  //
-  E_Buffer[E_BufferTail] = ul;
-     
-  // update BufferTail (with wraparound)
-  //
-  E_BufferTail++;
-  if (E_BufferTail == E_BufferSize)
-    E_BufferTail = 0;
-     
-} // end of E_SaveToBuffer
-
-//===========================================================================
-// E_SendFromBuffer - grab one event time from event buffer and output it to serial port
-//    NOTE:
-//
-//===========================================================================
-void E_SendFromBuffer()
-{
-  unsigned long ul;
-  char event_string[] = "[00000000]exp";
-  char c;
-
-  // is there anything in the queue?
-  //
-  if (E_Count == 0)
-    return;
-     
-  // get the first time in the queue
-  //
-  ul = E_Buffer[E_BufferHead]; 
- 
-  // update count, ptrs
-  //
-  E_Count--;
-  if (E_Count == 0)
-  {
-    // buffer is empty, reset it
-    E_BufferHead = -1;
-    E_BufferTail = 0;
-  }
-  else
-  {
-    E_BufferHead++;
-    if (E_BufferHead == E_BufferSize)
-    {
-      E_BufferHead = 0;
-    }
-  }
-  
-  // Now send the data
-  //
-  ultohex(event_string+1,ul);
-  for( int i = 0; i < 20; i++ )
-  {
-    
-    if ((c=event_string[i]) == 0)
-      break;
-
-    Serial.print(c);
-  }
-  Serial.print('\r');
-  Serial.print('\n');
-//  Serial.print(event_string);
-  
-} // end of E_SendFromBuffer
-
-//===========================================================================
-// S_GetEntry - allocate a sentence struct from the next open spot in the buffer and return the index
-//
-//===========================================================================
-int S_GetEntry()
-{
-  int idx;
-  
-  // Check for full buffer 
-  //   if the tail "catches" the head, bump up the head one spot (delete the first entry in the buffer)
-  //
-  if (S_BufferTail == S_BufferHead)
-  {
-    // buffer is full, we are overwriting the previous head entry in the buffer with the new "tail" data
-    //
-    S_BufferHead++;
-    if (S_BufferHead == S_BufferSize)
-      S_BufferHead = 0;
-      
-    // S_Buffer Count remains the same...
-  }
-  else
-  {
-    // buffer is NOT full...
-    //
-    
-    // now check for start of buffer
-    //
-    if (S_Count == 0)
-    {
-      S_BufferHead = S_BufferTail;  // set head ptr
-    }
-    
-    // we had a free spot, update the count
-    S_Count++;
-
-  }
-
-  // save the index for the allocated spot
-  //
-  idx = S_BufferTail;
-     
-  // update BufferTail (with wraparound)
-  //
-  S_BufferTail++;
-  if (S_BufferTail == S_BufferSize)
-    S_BufferTail = 0;
-
-  // all done, return the index
-  //
-  return(idx);
-  
-} // end of S_GetEntry
-
-//===========================================================================
-// S_SendFromBuffer - extract first NMEA sentence buffers and output it to serial port
-//    NOTE:
-//      *** This routine checks for pending incoming NMEA data during the write sequence
-//    
-//
-//===========================================================================
-void S_SendFromBuffer()
-{
-  unsigned long ul;
-  char strNMEA[] = "[00000000]";
-
-  // is there anything in the queue?
-  //
-  if (S_Count == 0)
-    return;
-
-  // OK - is it complete? (should be if we called this routine)
-  //
-  if (S_Buffer[S_BufferHead].Complete)
-  {
-    
-    // output preamble (time)
-    //
-    ultohex(strNMEA+1,S_Buffer[S_BufferHead].RecvTime);
-    Serial.print(strNMEA);
-
-    // output contents of head entry in character buffer
-    //  note: IdxFirst for head sentence SHOULD point to N_BufferHead
-    //
-    if (S_Buffer[S_BufferHead].IdxFirst != N_BufferHead)
-    {
-      Serial.println("");
-      Serial.println("ERROR 5");
-      Serial.println("");
-      DebugBuffers();
-      return;
-    }
-    
-    // send head sentence, free up space, and check ReadNMEA along the way...
-    //   NOTE: 
-    //    *** N_SendFromBuffer may call ReadNMEA and this may affect S_Buffer!  
-    //        => S_Buffer must be "stable" before calling ReadNMEA
-    //        => call S_DeleteHead FIRST!
-    //
-    S_DeleteHead();     // remove this head entry from S_Buffer
-    
-    N_SendFromBuffer();
-   
-  }  // end of check for complete sentence
-  
-} // end of S_SendFromBuffer
-
-//===========================================================================
-// S_DeleteHead - remove head entry in NMEA sentence buffer (invalidate it)
-//     note:
-//      ** this routine does NOT update the NMEA character buffer pointers
-//
-//===========================================================================
-void S_DeleteHead()
-{
-  // sanity check
-  //
-  if (S_Count == 0)
-    return;
-
-  // mark it
-  //
-  S_Buffer[S_BufferHead].IdxFirst = -1;
-  S_Buffer[S_BufferHead].Complete = false;
-  
-  // update count and pointers
-  //
-  S_Count--;
-  if (S_Count == 0)
-  {
-    // buffer is empty, reset it
-    //
-    S_Current = -1;
-    S_BufferHead = -1;
-    S_BufferTail = 0;
-  }
-  else
-  {
-    S_BufferHead++;
-    if (S_BufferHead == S_BufferSize)
-      S_BufferHead = 0;
-  }
-  
-} // end of S_DeleteHead
 
 
 //===========================================================================
@@ -1429,39 +1196,10 @@ bool GetFlashParms(char *inParms)
 }  // end of GetFlashParms
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++
-// Utility routines
-//++++++++++++++++++++++++++++++++++++++++++++++++++
-
-//===========================================================================
-// ultohex - convert unsigned long to 8 hex MAX7456 characters in a character array
 //
-//===========================================================================
-uint8_t hex[16] = {0x0A,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0B,0x0C,0x0D,0x0E,0x0F,0x10};
-void ultohex(uint8_t *dest, unsigned long ul)
-{
-
-
-  uint8_t *pn;
-  unsigned long nibble;
-
-  pn= dest + 7;
-  
-  for(int i = 0; i < 8; i++)
-  {
-
-    // get nibble 
-    //
-    nibble = (ul & 0xF);
-    *pn = hex[nibble];
-
-    // move to next nibble
-    //
-    ul = ul >> 4;
-    pn--;
-    
-  } // end of for loop through the nibbles
-  
-} // end of ultohex
+// MISC Utility routines
+//
+//++++++++++++++++++++++++++++++++++++++++++++++++++
 
 //===========================================================================
 // ultohexA - convert unsigned long to 8 hex ASCII characters in a character array
@@ -1498,7 +1236,7 @@ void ultohexA(uint8_t *dest, unsigned long ul)
 // ustohex - convert unsigned short to 4 hex MAX7456 characters in a character array
 //
 //===========================================================================
-void ustohex(uint8_t *dest, unsigned short us)
+void ustohexA(uint8_t *dest, unsigned short us)
 {
 
 
@@ -1513,7 +1251,7 @@ void ustohex(uint8_t *dest, unsigned short us)
     // get nibble 
     //
     nibble = (us & 0xF);
-    *pn = hex[nibble];
+    *pn = hexA[nibble];
 
     // move to next nibble
     //
@@ -1522,170 +1260,8 @@ void ustohex(uint8_t *dest, unsigned short us)
     
   } // end of for loop through the nibbles
   
-} // end of ustohex
+} // end of ustohexA
 
-//===========================================================================
-// bytetohex - convert byte to 2 hex MAX7456 characters in a character array
-//
-//===========================================================================
-void bytetohex(uint8_t *dest, uint8_t byt)
-{
-
-  uint8_t nibble;
-
-  nibble = (byt & 0xF0) >> 4;
-  *dest = hex[nibble];
-
-  dest++;
-  nibble = (byt & 0x0F);
-  *dest = hex[nibble];
-    
-} // end of bytetohex
-
-
-//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//
-//  INTERRUPT SERVICE ROUTINES
-//
-//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-
-//========================================
-// ISR for LED done (timer 3 output compare A interrupt)
-//=========================================
-ISR(TIMER3_COMPA_vect)
-{
-
-  // turn OFF LED & decrement count
-  //
-    // now turn off OC0B
-  TCCR0A = (1<< COM0B1);   // normal mode & CLEAR 0C0B on match
-  TCCR0B = (1<< FOC0B) | (1<< CS02) | (1<< CS01) | (1<< CS00);     // Force 0C0B low
-    // now setup for next incoming 1pps to SET 0C0B
-    //
-  TCCR0A = (1<< COM0B1) | (1<< COM0B0);   // normal mode & SET 0C0B on match
-
-
-  digitalWrite(LED_PIN,false);
-  LED_ON = false;
-
-  // turn OFF Timer 3
-  //
-  TCCR3B = (1 << WGM32);    // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
-  
-} // end of LED_done_interrupt
-
-//========================================
-// ISR for Timer 4 overflow
-//=========================================
-ISR( TIMER4_OVF_vect)
-{
-  
-  timer4_ov++;   // just increment overflow count
-  
-} // end of Timer4 overflow vector
-
-//=================================================================
-// ISR for Timer 4 input capture interrupt - capture 1PPS input 
-//==================================================================
-ISR( TIMER4_CAPT_vect)
-{
-
-  long count4;
-  long count5;
-  long diff; 
-  unsigned long LED_time;
-
-  //******************
-  // Check for start/end of LED pulse
-  //
-  if (Pulse_Duration <= 0)
-  {
-	  // no more flashes left
-	  //
-    digitalWrite(LED_PIN,false);            // LED OFF
-    LED_time = GetTicks(CNT4);              // time LED turned OFF
-    LED_ON = false;
-    pps_flash = false;                      // flash OFF at this PPS
-  }
-  else
-  {
-    // 
-    // Pulse active => LED ON
-    //
-    digitalWrite(LED_PIN,true);             // LED ON 
-    LED_time = GetTicks(CNT4);              // time LED turned ON
-    pps_flash = true;
-
-    if (!LED_ON)
-    {
-      // LED Pulse begins
-      //
-      LED_ON = true;
-    }
-
-    // one less second left in this pulse
-    //
-    Pulse_Duration--;
-
-  } // end of turning on LED
-
-
-  //************************
-  // Get TIME of PPS event from input capture
-  //
-  pps_time = GetTicks(IC4);
-  pps_new = true;
-
-  //***********************
-  // increment pps count
-  //
-  pps_count++;
-
-  //****************************
-  // NOW do error checking
-  //
-  
-  // check to make sure timer 4 and 5 are similar
-  //   if they differ by more than 50 us, report an error - NOT sure this always works...
-  //
-  count4 = long(TCNT4);
-  count5 = long(TCNT5);
-  diff = count5 - count4;
-  if ( (diff > 100) || (diff < -100) )
-  {
-    
-    timer45_error = true;
-    timer45_values = ((unsigned long)count5 << 16) + (unsigned long)count4;
-    
-  } // end of check on timer 4 /5 sync
-  
-} // end of Timer4 input capture interrupt
-
-//========================================
-// ISR for Timer 5 overflow
-//=========================================
-ISR( TIMER5_OVF_vect)
-{
-  
-  timer5_ov++;   // just increment overflow count
-  
-} // end of Timer5 overflow vector
-
-//=================================================================
-// ISR for Timer 5 input capture interrupt - capture external EVENT input 
-//==================================================================
-ISR( TIMER5_CAPT_vect)
-{
-  unsigned long cTime;
-
-  // get current time and save it to the event buffer
-  //
-//  cTime = ((unsigned long)timer5_ov << 16) + (unsigned long)ICR5;
-  cTime = GetTicks(IC5);
-  E_SaveToBuffer(cTime); 
-  
-} // end of Timer5 input capture interrupt
 
 
 //++++++++++++++++++++++++++++++++++++++++++++
@@ -1800,6 +1376,36 @@ void SecDec()
   SREG = savSREG;     // restore interrupt status
   
 } // end of SecDec
+
+
+//=========================================
+//  DateToMJD - convert YYYY,MM,DD to MJD
+//    Note: adapted from van Flandern and Pulkkinen http://adsabs.harvard.edu/abs/1979ApJS...41..391V
+//=========================================
+unsigned long DateToMJD(int yy, int mm, int dd)
+{
+  unsigned long mjd;
+
+  // Modified Julian Day
+  mjd = 367L * yy - 7 * (yy + (mm + 9) / 12) / 4 + 275 * mm / 9 + dd - 678987;
+
+  return(mjd);
+
+} // end of DateToMJD
+
+//=========================================
+//  TimeToSecOfDay - convert HH:MM:SS time to seconds of day
+//=========================================
+unsigned long TimeToSecOfDay(int hh, int mm, int ss)
+{
+  unsigned long sod;
+
+  sod = hh*3600 + mm*60 + ss;
+
+  return(sod);
+
+} // end of TimeToSecOfDay
+
 
 //++++++++++++++++++++++++++++++++++++++++
 // NEO 6 GPS routines
@@ -2140,7 +1746,18 @@ bool ubxGetAck(uint8_t *MSG)
 
 //=============================================================
 //  ReadGPS - gather and parse any pending serial data from GPS
-//    returns false if error parsing data
+//
+//  Outputs:
+//    nmeaSentence[] - current NMEA sentence placed in this array
+//    nmeaCount = position of next char in array
+//    tk_NMEAStart = timer value when $ char of sentence is received
+//    
+//    * after reading full sentence (\n), parse data from sentence into 
+//      global variables for the sentence
+//
+//
+//  Returns:
+//    returns false iff error parsing data
 //=============================================================
 bool ReadGPS()
 {
@@ -2273,7 +1890,7 @@ bool ReadGPS()
           // now check PUBX04 time against internal time to catch errors...
           //
           ErrorFound = 0;
-          if ( CurrentMode == TimeValid )
+          if ( DeviceMode == TimeValid )
           {
             
             internalSec = (long)n_hh*3600 + (long)n_mm*60 + (long)n_ss;   // internal seconds of the day
@@ -2319,22 +1936,17 @@ bool ReadGPS()
             //
             if (ErrorFound > 0)
             {
-              CurrentMode = ErrorMode;
-              ErrorCountdown = ERROR_DISPLAY_SECONDS;
+              // try to re-sync
+              //
+              DeviceMode = Syncing;
+              TimeSync = SYNC_SECONDS;
 
               noInterrupts();                 // clear the ave interval computation
               tk_pps_interval_total = 0;
               tk_pps_interval_count = 0;
               interrupts();
-              
-              // Error message
-              //
-              for( int i = 0; i < FIELDTOT_COL; i++ )   // clear all but the field count
-              {
-                BottomRow[i] = 0x00;
-              }   
-              OSD.atomax(&BottomRow[1],(uint8_t*)msgNoPPS,len_msgNoPPS);
-              bytetodec2(BottomRow + len_msgNoPPS + 2,(byte)ErrorFound);
+//***tbd error report?
+
             }
               
           } // end of RMC check against internal time
@@ -2943,72 +2555,45 @@ int ParsePUBX04(int fieldCount)
 } // end of parsePUBX04
 
 //===========================================================================
-// DEBUG routines
+// d2i - decode two POSITIVE ascii digits to int value
+//          * on error or negative value, returns negative value as error
+//
 //===========================================================================
-void SendBuffer(char* cBuffer, int bufferSize)
+int d2i(uint8_t *src)
 {
-  char c;
-  char hex[10] = {0,0,0,0,0,0,0,0,0,0};
+    int val;
 
-  for( int i = 0; i < bufferSize; i++ )
-  {
-    c = cBuffer[i];
-
-    if (isPrintable(c))
+    //  first char
+    // 0x20 = ASCII space
+    if (*src == 0x20)
     {
-      Serial.print(c);                   // output non-null char to std serial port     
-    }
-    else if (c == 0)
-    {
-      Serial.print("<0>");
-    }
-    else if (c == '\n')
-    {
-      Serial.print("<n>");
+      // space for left digit
+      //
+      val = 0;
+      src++;
     }
     else
     {
-      ultohex(hex,(unsigned long)c);
-      Serial.print('<');
-      Serial.print(hex+6);
-      Serial.print('>');
-    }
-  }
-
-} // end of SendBuffer
-
-void DebugBuffers()
-{
-
-  // S_Buffer
-  //
-  Serial.print("S_Buffer: Count, Cur, Head, Tail :");
-  Serial.print(S_Count);
-  Serial.print(", ");
-  Serial.print(S_Current);
-  Serial.print(", ");
-  Serial.print(S_BufferHead);
-  Serial.print(", ");
-  Serial.print(S_BufferTail);
-  Serial.println("");
-  for (int i = 0; i < S_BufferSize; i++)
-  {
-    Serial.print(S_Buffer[i].RecvTime,HEX);
-    Serial.print(", ");
-    Serial.print(S_Buffer[i].IdxFirst);
-    Serial.println("");
-  }
-
-  // N_Buffer
-  //
-  Serial.print("N_Buffer: Count, Head, Tail : ");
-  Serial.print(N_Count);
-  Serial.print(", ");
-  Serial.print(N_BufferHead);
-  Serial.print(", ");
-  Serial.print(N_BufferTail);
-  Serial.println("");
-  SendBuffer((char *)N_Buffer,N_BufferSize);
-  Serial.println("");
+      // non-space char
+      if ((*src < 0x30) || (*src > 0x39))   // 0x30 = '0'
+      {
+        return -1;
+      }
   
-}
+      val = (*src - 0x30)*10;
+  
+      src++;
+    }
+
+    // right most digit
+    //
+    if ((*src < 0x30) || (*src > 0x39))
+    {
+      return -1;
+    }
+    val += (*src - 0x30);
+
+    return val;
+    
+} // end of d2i
+
