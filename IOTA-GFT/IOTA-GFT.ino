@@ -37,6 +37,7 @@
 #include "iota-gft.h"
 #include "ublox.h"
 #include "gpsComm.h"
+#include "logger.h"
 
 //=======================================
 //  GLOBAL variables and definitions
@@ -137,305 +138,23 @@ volatile unsigned long cmd_time;
 //
 volatile bool blnEchoNMEA = false;
 volatile bool blnEchoPPS = false;
-char msgEchoPPS[] = "<P>TTTTTTTT</P>\n";
-#define len_msgEchoPPS 16
 
-
-
-//===============================================================
-// SETUP
-//===============================================================
-void setup()  
-{    
-  unsigned long tNow;
-  unsigned long tBegin;
-  
-  unsigned int sReg;
-
-  int retVal;
-  
-  //*************************************
-  // general Init
-  //
-
-  // initializing now...
-  //
-  DeviceMode = InitMode;
-  FlashMode = PPS;
-
-  // set PIN modes
-  //
-  pinMode(LED_BUILTIN,OUTPUT);    // setup built-in LED 
-  pinMode(LED_PIN,OUTPUT);        // setup external LED pin
-  pinMode(BUTTON_PIN,INPUT);		  // button input pin
-
-  // connect to PC at 115200 so we send data quickly
-  //
-  //
-  Serial.begin(115200);
-  Serial.println("STARTING!");
-
-  // 9600 NMEA is the default rate for the GPS
-  //
-  Serial1.begin(9600);
-
-  //*********************
-  //  Init GPS
-  //
-  retVal = gpsCommInit();
-  if (!gpsCommInit())
-  {
-    Serial.print("Fatal error initializing GPS.");
-  }
- 
-
-  //**********************
-  //  Init timers
-  //	  Timer 2 - PWM for LED
-  //    Timer 3 - LED flash duration
-  //    Timer 4 - 1pps logging
-  //    Timer 5 - exposure marker logging
-  //  
-
-  // Timer 2 - PWM for LED (to control brightness)
-  //
-  // set flash pwm frequency using Timer 2 in fast PWM mode; when on, TCNT2 continuously counts from 0 to OCR2A
-  // output OC2B (pin 9) starts high at TCNT2 = 0, goes low when TCNT2 = OCR2B and resets to high at TCNT2 = OCR2A
-  //
-  // pwm pulses are switched on/off by setting/clearing the CS20 bit of TCCR2B (prescaler)
-  //
-  TCCR2A = bit(COM2B1) | bit(WGM20) | bit(WGM21);  		// clear OC2B on compare, fast PWM top = OCR2A (with WGM22 below)
-  TCCR2B = bit(WGM22);   								// fast pwm, prescaler = 0 NOW, set CS20 bit to start PWM
-  OCR2A = OCR2Alevel;  									// top level of TCNT2
-  OCR2B = map(flashlevel, 0, 100, 0, OCR2Alevel);  		// compare at flashlevel mapped to 0<>OCR2A range; user adjusts this
-  
-  //  Timer 3 - for LED flash duration
-  //    CTC mode 4
-  //    prescaler OFF => timer OFF for now / but will be set to f/1024 for actual timing
-  //    OCR3A set to desired duration
-  //    PRR1 disabled to allow timer
-  //
-  sReg = SREG;
-  noInterrupts();
-  TCCR3A = 0;               // compare output disconnected, WGM bits 1 and 0 set to 0
-  TCCR3B = (1 << WGM32);    // CTC3 set => mode 4 AND CS3x = 000 (no input => clock stopped)
-  PRR1 &= ~(1 << PRTIM3);   // disable power reduction for timer 3 to enable timer
-  SREG = sReg;              // back on again
-
-  //  Timer 4 - used to capture times of 1pps interrrupts
-  //    ICP4 pin (digital 49) set to input
-  //    Normal mode
-  //    Prescaler = f/8
-  //    Input Capture = edge detect
-  //
-  pinMode(49,INPUT);                    // ICP4 = pin 49 as input
-  
-  TIMSK4 = 0;                             // mask off all interrupts for now
-  TCCR4A = 0;                             // all OC ports off and normal mode
-  TCCR4B = (1 << ICES4) | (1 << CS41);    // positive edge trigger IC & f/8 prescaler
-  PRR1 &= ~(1 << PRTIM4);                 // turn OFF power reduction for timer 4 => turn it ON!
-  
-  //  Timer 5 - used to capture times of exposure interrrupts
-  //    ICP5 pin (digital 48) set to input
-  //    Normal mode
-  //    Prescaler = f/8
-  //    Input Capture = edge detect AND noise canceller ON
-  //
-  pinMode(48,INPUT);                    // ICP5 = pin 48 as input
-  
-  TIMSK5 = 0;                             // mask off all interrupts for now
-  TCCR5A = 0;                             // all OC ports off and normal mode
-  TCCR5B = (1 << ICNC5) | (1 << ICES5) | (1 << CS51);    // noise cancel on, positive edge trigger IC & f/8 prescaler
-  PRR1 &= ~(1 << PRTIM5);                 // turn OFF power reduction for timer 5 => turn it ON!
-
-  //  SYNC all synchronous timers via Prescaler reset
-  //
-  GTCCR = (1 << TSM) | (1 << PSRSYNC);    // STOP prescaler and all syncronous timers
-
-  TCNT4 = 0;        // timer4: reset count
-  timer4_ov = 0;    // timer4: reser overflow count
-  TIFR4 = 0;        // timer4: reset all pending interrupts
-  TIMSK4 = (1 << ICIE4) | (1 << TOIE4);   // timer 4: turn on IC capture and overflow interrupts
-
-  TCNT5 = 0;        // timer5: reset count
-  timer5_ov = 0;    // timer5: reser overflow count
-  TIFR5 = 0;        // timer5: reset all pending interrupts
-  TIMSK5 = (1 << ICIE5) | (1 << TOIE5);   // timer 5: turn on IC capture and overflow interrupts
-
-  GTCCR = 0;    // RESTART prescaler and all synchronous timers
-  
-  //******************
-  //  Waiting for GPS
-  //  - Wait for PPS interrupts AND NMEA data valid 
-  //  - ReadGPS will parse the NMEA data and set valid status for NMEA data
-  //  - after NMEA data valid, next PPS ISR will change the device mode to "Syncing" 
-  //
-  DeviceMode = WaitingForGPS;
-  Serial.println("Waiting for GPS...");
-
-  tBegin = millis();
-  while( DeviceMode == WaitingForGPS)
-  {
-    // get pending serial data from GPS
-    //
-    ReadGPS();
-
-    // wait up to 10 minutes for valid GPS
-    //
-    tNow = millis();
-    if ((tNow - tBegin) > (10 * 60000))
-    {
-      Serial.println("Timeout waiting for GPS.");
-      DeviceMode = FatalError;
-      while(1);
-    }
-  } // end of waiting for GPS 
-
-  //******************
-  //  Now wait for Sync to finish
-  //  - PPS ISR will change mode to TimeValid after sync period finishes 
-  //
-  tBegin = millis();
-  while(FlashMode == Syncing)
-  {
-    // get pending serial data from GPS
-    //
-    ReadGPS();
-
-    // wait up to 10 minutes for Sync
-    //
-    tNow = millis();
-    if ((tNow - tBegin) > (10 * 60000))
-    {
-      Serial.println("Sync failed.");
-      DeviceMode = FatalError;
-      while(1);
-    }
-  }
-
-  //*****************
-  //  Now start timing...
-  //
-
-} // end of setup
-
-
-//==========================================================================
-//  LOOP
+//********
+//  Logging outputs
 //
-//  Basic algorithm
-//	- check for button press
-//  - Keep checking for GPS data until there is none
-//  - Then check for incomming commands from PC
-//  - Then execute PC commands
-//
-//============================================================================
-void loop()                     // run over and over again
-{
-  unsigned long tmpTime;
-  unsigned long firstTime;
-  char pps_string[] = "[00000000]pps 0000\r\n";
-  char time_string[] = "[00000000]";
-  char c;
-  int iCount;
-  int iDuration;
-  int iPos;
-  int iPosEnd;
-  String inOption;
-  
-  byte lastButtonState = LOW;
-  unsigned long debounceDuration = 50; 				// millis
-  unsigned long lastTimeButtonStateChanged = 0;
+char logNMEA[] = "TTTTTTTT ";         // just the prefix to the rest of the NMEA string
+#define len_logNMEA 9
 
+char logPPS[] = "TTTTTTTT P\r\n";
+#define len_logPPS 12
 
-  int NextBuffer;     // 0 => nothing to do, 1=> NMEA, 2=> pps, 3=> external
+char logFlashON[] = "TTTTTTTT +\r\n";
+#define len_logFlashON 12
 
+char logFlashOFF[] = "TTTTTTTT -\r\n";
+#define len_logFlashOFF 12
 
-  
-  //******************************************************
-  // check for Button Press (with debouncing)
-  //   => if not flashing, initiate a flash
-  //   note: button only works in TimeValid mode
-  //
-  //******************************************************
-  if (DeviceMode == TimeValid)
-  {
-    if (millis() - lastTimeButtonStateChanged > debounceDuration)
-    {
-        byte buttonState = digitalRead(BUTTON_PIN);
-        if (buttonState != lastButtonState)
-      {
-        lastTimeButtonStateChanged = millis();
-        lastButtonState = buttonState;
-        if (buttonState == HIGH)
-        {
-          // button PRESSED!
-          //  start flashing at next PPS
-          //
-          Pulse_Duration = PPS_Pulse_Duration;
-          Pulse_Count = PPS_Pulse_Count;
-        }
-      }
-    }
-  }
-
-
-  //******************************************************
-  //  check for pending data from GPS
-  //
-  ReadGPS();
-
-  //******************************************************
-  // Output logging info
-  //
-
-  //***********************
-  //  now check for an incomming command
-  //   but we don't execute the command until we see a newline...
-  //
-  ReadCMD();
- 
-  //*******************************************************
-  //  Execute pending command
-  //
-  if (Cmd_Next < 0)
-  {
-    // ECHO command string to USB port
-    //
-    ultohexA(time_string+1,cmd_time);
-    for( int i = 0; i < 20; i++ )
-    {       
-      if ((c=time_string[i]) == 0)
-        break;
-  
-      Serial.print(c);
-    }
-    
-    Serial.print("CMD <");
-    Serial.print(strCommand);
-    Serial.print(">\r\n");
-
-    // EXECUTE command
-    //
-    Cmd_Next = 0;
-
-    // Commands
-    //   ^flash [Count [Duration]], where Count = number of flashes and Duration = length of flash in microseconds (16 us resolution)
-    //
-    if (strncmp(strCommand,"^flash",6) == 0)
-    {
-      // look for command options: Count, then Duration
-      //
-      if (GetFlashParms( &strCommand[6] ))
-      {
-        pinMode(4,OUTPUT);    // ENABLE OC0B output to LED       
-      }
-      
-    }
-    
-  } // end of handling a pending command
-
-} // end of loop()
+unsigned long LastFlush = 0;            // millis() time of last flush
 
 
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -494,7 +213,7 @@ ISR( TIMER4_CAPT_vect)
   unsigned long ppsDiff;
   bool blnIntervalError;
 
-  unsigned long LED_time;
+  unsigned long tk_LED;       // LED time in ticks
 
  
   //*****************
@@ -519,12 +238,13 @@ ISR( TIMER4_CAPT_vect)
       // no more flashes left
       //
       digitalWrite(LED_PIN,false);            // LED OFF
-      LED_time = GetTicks(CNT4);              // time LED turned OFF
+      tk_LED = GetTicks(CNT4);              // time LED turned OFF
       LED_ON = false;
 
       // LOG time LED went OFF
       //
-//*** tbd Log LED OFF time
+      ultohexA(logFlashOFF,tk_LED);
+      LogTextWrite(logFlashOFF,len_logFlashOFF);
 
     }
   }
@@ -536,7 +256,7 @@ ISR( TIMER4_CAPT_vect)
     if (!LED_ON)
     {
       digitalWrite(LED_PIN,true);             // LED ON 
-      LED_time = GetTicks(CNT4);              // time LED turned ON
+      tk_LED = GetTicks(CNT4);              // time LED turned ON
       LED_ON = true;
 
       // one less second left in this pulse
@@ -545,7 +265,8 @@ ISR( TIMER4_CAPT_vect)
 
       // log time LED went ON
       //
-//*** tbd Log LED ON time
+      ultohexA(logFlashON,tk_LED);
+      LogTextWrite(logFlashON,len_logFlashON);
 
     }
 
@@ -629,7 +350,11 @@ ISR( TIMER4_CAPT_vect)
   //
   tk_PPS_valid = tk_PPS;
 
-//*** tbd log PPS time
+  // log the PPS time
+  //
+  ultohexA(logPPS,tk_PPS);
+  LogTextWrite(logPPS,len_logPPS);
+
 
   //********************************
   // DeviceMode logic
@@ -1322,15 +1047,295 @@ unsigned long DateToMJD(int yy, int mm, int dd)
 } // end of DateToMJD
 
 //=========================================
-//  TimeToSecOfDay - convert HH:MM:SS time to seconds of day
+//  TimeToSecOfDay - convert HH:MM:SS time to SIGNED seconds of day
 //=========================================
-unsigned long TimeToSecOfDay(int hh, int mm, int ss)
+long TimeToSecOfDay(int hh, int mm, int ss)
 {
-  unsigned long sod;
+  long sod;
 
   sod = hh*3600 + mm*60 + ss;
 
   return(sod);
 
 } // end of TimeToSecOfDay
+
+//===============================================================
+// SETUP
+//===============================================================
+void setup()  
+{    
+  unsigned long tNow;
+  unsigned long tBegin;
+  
+  unsigned int sReg;
+
+  int retVal;
+  
+  //*************************************
+  // general Init
+  //
+
+  // initializing now...
+  //
+  DeviceMode = InitMode;
+  FlashMode = PPS;
+
+  // set PIN modes
+  //
+  pinMode(LED_BUILTIN,OUTPUT);    // setup built-in LED 
+  pinMode(LED_PIN,OUTPUT);        // setup external LED pin
+  pinMode(BUTTON_PIN,INPUT);		  // button input pin
+
+  // connect to PC at 115200 so we send data quickly
+  //
+  //
+  Serial.begin(115200);
+  Serial.println("STARTING!");
+
+  // 9600 NMEA is the default rate for the GPS
+  //
+  Serial1.begin(9600);
+
+  //*********************
+  //  Init GPS
+  //
+  retVal = gpsCommInit();
+  if (!gpsCommInit())
+  {
+    Serial.print("Fatal error initializing GPS.");
+  }
+ 
+
+  //**********************
+  //  Init timers
+  //	  Timer 2 - PWM for LED
+  //    Timer 3 - LED flash duration
+  //    Timer 4 - 1pps logging
+  //    Timer 5 - exposure marker logging
+  //  
+
+  // Timer 2 - PWM for LED (to control brightness)
+  //
+  // set flash pwm frequency using Timer 2 in fast PWM mode; when on, TCNT2 continuously counts from 0 to OCR2A
+  // output OC2B (pin 9) starts high at TCNT2 = 0, goes low when TCNT2 = OCR2B and resets to high at TCNT2 = OCR2A
+  //
+  // pwm pulses are switched on/off by setting/clearing the CS20 bit of TCCR2B (prescaler)
+  //
+  TCCR2A = bit(COM2B1) | bit(WGM20) | bit(WGM21);  		// clear OC2B on compare, fast PWM top = OCR2A (with WGM22 below)
+  TCCR2B = bit(WGM22);   								// fast pwm, prescaler = 0 NOW, set CS20 bit to start PWM
+  OCR2A = OCR2Alevel;  									// top level of TCNT2
+  OCR2B = map(flashlevel, 0, 100, 0, OCR2Alevel);  		// compare at flashlevel mapped to 0<>OCR2A range; user adjusts this
+  
+  //  Timer 3 - for LED flash duration
+  //    CTC mode 4
+  //    prescaler OFF => timer OFF for now / but will be set to f/1024 for actual timing
+  //    OCR3A set to desired duration
+  //    PRR1 disabled to allow timer
+  //
+  sReg = SREG;
+  noInterrupts();
+  TCCR3A = 0;               // compare output disconnected, WGM bits 1 and 0 set to 0
+  TCCR3B = (1 << WGM32);    // CTC3 set => mode 4 AND CS3x = 000 (no input => clock stopped)
+  PRR1 &= ~(1 << PRTIM3);   // disable power reduction for timer 3 to enable timer
+  SREG = sReg;              // back on again
+
+  //  Timer 4 - used to capture times of 1pps interrrupts
+  //    ICP4 pin (digital 49) set to input
+  //    Normal mode
+  //    Prescaler = f/8
+  //    Input Capture = edge detect
+  //
+  pinMode(49,INPUT);                    // ICP4 = pin 49 as input
+  
+  TIMSK4 = 0;                             // mask off all interrupts for now
+  TCCR4A = 0;                             // all OC ports off and normal mode
+  TCCR4B = (1 << ICES4) | (1 << CS41);    // positive edge trigger IC & f/8 prescaler
+  PRR1 &= ~(1 << PRTIM4);                 // turn OFF power reduction for timer 4 => turn it ON!
+  
+  //  Timer 5 - used to capture times of exposure interrrupts
+  //    ICP5 pin (digital 48) set to input
+  //    Normal mode
+  //    Prescaler = f/8
+  //    Input Capture = edge detect AND noise canceller ON
+  //
+  pinMode(48,INPUT);                    // ICP5 = pin 48 as input
+  
+  TIMSK5 = 0;                             // mask off all interrupts for now
+  TCCR5A = 0;                             // all OC ports off and normal mode
+  TCCR5B = (1 << ICNC5) | (1 << ICES5) | (1 << CS51);    // noise cancel on, positive edge trigger IC & f/8 prescaler
+  PRR1 &= ~(1 << PRTIM5);                 // turn OFF power reduction for timer 5 => turn it ON!
+
+  //  SYNC all synchronous timers via Prescaler reset
+  //
+  GTCCR = (1 << TSM) | (1 << PSRSYNC);    // STOP prescaler and all syncronous timers
+
+  TCNT4 = 0;        // timer4: reset count
+  timer4_ov = 0;    // timer4: reser overflow count
+  TIFR4 = 0;        // timer4: reset all pending interrupts
+  TIMSK4 = (1 << ICIE4) | (1 << TOIE4);   // timer 4: turn on IC capture and overflow interrupts
+
+  TCNT5 = 0;        // timer5: reset count
+  timer5_ov = 0;    // timer5: reser overflow count
+  TIFR5 = 0;        // timer5: reset all pending interrupts
+  TIMSK5 = (1 << ICIE5) | (1 << TOIE5);   // timer 5: turn on IC capture and overflow interrupts
+
+  GTCCR = 0;    // RESTART prescaler and all synchronous timers
+  
+  //******************
+  //  Waiting for GPS
+  //  - Wait for PPS interrupts AND NMEA data valid 
+  //  - ReadGPS will parse the NMEA data and set valid status for NMEA data
+  //  - after NMEA data valid, next PPS ISR will change the device mode to "Syncing" 
+  //
+  DeviceMode = WaitingForGPS;
+  Serial.println("Waiting for GPS...");
+
+  tBegin = millis();
+  while( DeviceMode == WaitingForGPS)
+  {
+    // get pending serial data from GPS
+    //
+    ReadGPS();
+
+    // wait up to 10 minutes for valid GPS
+    //
+    tNow = millis();
+    if ((tNow - tBegin) > (10 * 60000))
+    {
+      Serial.println("Timeout waiting for GPS.");
+      DeviceMode = FatalError;
+      while(1);
+    }
+  } // end of waiting for GPS 
+
+  //******************
+  //  Now wait for Sync to finish
+  //  - PPS ISR will change mode to TimeValid after sync period finishes 
+  //
+  tBegin = millis();
+  while(FlashMode == Syncing)
+  {
+    // get pending serial data from GPS
+    //
+    ReadGPS();
+
+    // wait up to 10 minutes for Sync
+    //
+    tNow = millis();
+    if ((tNow - tBegin) > (10 * 60000))
+    {
+      Serial.println("Sync failed.");
+      DeviceMode = FatalError;
+      while(1);
+    }
+  }
+
+  //*****************
+  //  Now start timing...
+  //
+
+} // end of setup
+
+
+//==========================================================================
+//  LOOP
+//
+//  Basic algorithm
+//	- check for button press
+//  - Keep checking for GPS data until there is none
+//  - Then check for incomming commands from PC
+//  - Then execute PC commands
+//
+//============================================================================
+void loop()                     // run over and over again
+{
+  unsigned long now_ms;
+
+  byte lastButtonState = LOW;
+  unsigned long debounceDuration = 50; 				// millis
+  unsigned long lastTimeButtonStateChanged = 0;
+
+  
+  //******************************************************
+  // check for Button Press (with debouncing)
+  //   => if not flashing, initiate a flash
+  //   note: button only works in TimeValid mode
+  //
+  //******************************************************
+  if (DeviceMode == TimeValid)
+  {
+    if (millis() - lastTimeButtonStateChanged > debounceDuration)
+    {
+        byte buttonState = digitalRead(BUTTON_PIN);
+        if (buttonState != lastButtonState)
+      {
+        lastTimeButtonStateChanged = millis();
+        lastButtonState = buttonState;
+        if (buttonState == HIGH)
+        {
+          // button PRESSED!
+          //  start flashing at next PPS
+          //
+          Pulse_Duration = PPS_Pulse_Duration;
+          Pulse_Count = PPS_Pulse_Count;
+        }
+      }
+    }
+  }
+
+  //******************************************************
+  //  check for pending data from GPS
+  //
+  ReadGPS();
+
+  //******************************************************
+  // Output logging info
+  //
+  now_ms = millis();
+  if ((now_ms - LastFlush) > 1000)
+  {
+    LogFlushAll();
+    LastFlush = now_ms;
+  } 
+
+  //***********************
+  //  now check for an incomming command
+  //   but we don't execute the command until we see a newline...
+  //
+  ReadCMD();
+ 
+  //*******************************************************
+  //  Execute pending command
+  //
+  if (Cmd_Next < 0)
+  {
+    // ECHO command string to USB port
+    //
+    
+    Serial.print("CMD <");
+    Serial.print(strCommand);
+    Serial.print(">\r\n");
+
+    // EXECUTE command
+    //
+    Cmd_Next = 0;
+
+    // Commands
+    //   ^flash [Count [Duration]], where Count = number of flashes and Duration = length of flash in microseconds (16 us resolution)
+    //
+    if (strncmp(strCommand,"^flash",6) == 0)
+    {
+      // look for command options: Count, then Duration
+      //
+      if (GetFlashParms( &strCommand[6] ))
+      {
+        pinMode(4,OUTPUT);    // ENABLE OC0B output to LED       
+      }
+      
+    }
+    
+  } // end of handling a pending command
+
+} // end of loop()
+
 

@@ -787,6 +787,10 @@ bool ReadGPS()
       {
         nmeaSentence[nmeaCount] = 0;      // null terminate the sentence
 
+        // log this sentence
+        //
+// ***tbd log this sentence
+        
         // call the parser
         //
         resultParse = ParseNMEA();
