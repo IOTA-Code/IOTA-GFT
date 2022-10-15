@@ -790,7 +790,7 @@ bool ReadGPS()
         // log this sentence
         //
 // ***tbd log this sentence
-        
+
         // call the parser
         //
         resultParse = ParseNMEA();
@@ -883,6 +883,8 @@ bool ReadGPS()
               tk_pps_interval_total = 0;
               tk_pps_interval_count = 0;
               interrupts();
+
+              errorCode = ErrorFound + 20;
 //***tbd error report?
 
             }

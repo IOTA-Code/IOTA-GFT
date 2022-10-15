@@ -284,10 +284,11 @@ bool LogFlushAll()
     Serial.write(curBlock->data,curBlock->count);
 #endif    
     bytesWritten += curBlock->count;
+    curBlock->count = 0;                // this block now empty
   }
   
   return(true);
-  
+
 } // end of LogFlushAll
 
 

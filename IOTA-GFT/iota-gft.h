@@ -34,8 +34,8 @@
 
   //****************************************
   // Flashing Modes
-  //  PPS mode => flash on PPS signal
-  //	EXP mode => flash on EXP interrupt (exposure signal)
+  //  PPS mode => flash on PPS signal for X whole seconds
+  //	EXP mode => short duration flashes on EXP interrupt (exposure signal)
   //
   //	fEventDefined => True if an future event definition active
   //
@@ -84,6 +84,11 @@
   //  Input parms
   //
   extern volatile bool blnEchoNMEA;
+
+  //***********
+  // debug
+  //
+  extern int errorCode;
 
   //******************
   // function prototypes
