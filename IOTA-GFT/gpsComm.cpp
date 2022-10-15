@@ -11,6 +11,7 @@
 #include "gpsComm.h"
 #include "iota-gft.h"
 #include "ublox.h"
+#include "logger.h"
 
 //---------------------------------------
 //  GLOBALS
@@ -33,6 +34,7 @@ struct ubxPUBX04 gpsPUBX04;
 
 #define NMEA_MAX  201    // max length of a nmea sentence
 
+uint8_t nmeaTime[9] = "TTTTTTTT ";    // string version of NMEA time
 uint8_t nmeaSentence[NMEA_MAX+1];     // current NMEA sentence
 int nmeaCount = -1;                   // position of next char in NMEA sentence = # of chars in current sentence, 0 => no current sentence
   
@@ -728,7 +730,11 @@ bool ReadGPS()
       noInterrupts();
       tk_NMEAStart = GetTicks(CNT4);
       interrupts();
-      
+
+      // save the time at the start of the string
+      //
+      ultohexA(nmeaTime,tk_NMEAStart);
+  
       // save the current hh:mm:ss time
       //
       noInterrupts();
@@ -751,7 +757,7 @@ bool ReadGPS()
       //  ok, save the start char and get ready for next one
       //
       nmeaSentence[0] = (uint8_t)c;
-      nmeaCount = 1;
+      nmeaCount++;
       
     }
     else
@@ -789,7 +795,8 @@ bool ReadGPS()
 
         // log this sentence
         //
-// ***tbd log this sentence
+        LogTextWrite(nmeaTime,9);
+        LogTextWrite(nmeaSentence,nmeaCount);
 
         // call the parser
         //

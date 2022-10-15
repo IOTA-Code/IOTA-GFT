@@ -94,5 +94,7 @@
   // function prototypes
   //
   extern unsigned long GetTicks(CountSource);
+  extern void ultohexA(uint8_t *, unsigned long);
+
 
 #endif // end of block containing entire include file
