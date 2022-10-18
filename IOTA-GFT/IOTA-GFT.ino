@@ -42,6 +42,7 @@
 #include "ublox.h"
 #include "gpsComm.h"
 #include "logger.h"
+#include "usbComm.h"
 
 //==========================================
 // PIN definitions
@@ -126,19 +127,8 @@ volatile boolean pps_flash = false;           // true IFF LED was flashed with t
 //
 volatile boolean LED_ON = false;      			// LED state
 
-  // PPS mode settings
-int PPS_Flash_Duration_Sec = 5;                 // duration of one LED "flash" in seconds
 volatile int PPS_Flash_Countdown_Sec;           // # of seconds remaining in a PPS flash
 
-int Flash_Test_Interval = 60;					// # of seconds between flash sequences while emitting test flashes
-
-//****************************
-// Command string from the PC
-//
-#define CommandSize 30            // max size of a command string 
-char strCommand[ CommandSize + 1 ];
-int Cmd_Next;                     // speed optimization ( -1 => full command pending )
-volatile unsigned long cmd_time;
 
 //***********
 //  Button
@@ -700,188 +690,6 @@ ISR( TIMER5_CAPT_vect)
   
 } // end of Timer5 input capture interrupt
 
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//
-//   USB comm
-//
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-
-//=====================================
-//  ReadCMD - get input from USB port
-//  
-//  pick up single line "commands" sent via the USB port
-//  after reading \n (newline), sets Cmd_Next = -1 and returns
-//
-//======================================
-void ReadCMD()
-{
-
-  byte bIn;
-  
-  // read command from PC
-  //  - one byte at a time
-  //  - command terminates with a Newline
-  //
-  while ( Serial.available() > 0 )
-  {
-    // was a command pending?
-    //
-    if (Cmd_Next < 0)
-    {
-      Cmd_Next = 0;     // not any more...
-    }
-    else if (Cmd_Next >= CommandSize)
-    {
-      // ran out of room => error
-      //
-      Cmd_Next = 0;   // reset to new command
-    }
-    
-    // is this the start of a command?
-    //
-    if (Cmd_Next == 0)
-    {
-
-      // get time from timer 4 count
-      //
-      noInterrupts();
-      cmd_time = GetTicks(CNT4);
-      interrupts();
-      
-    }
-
-    
-    // ok -> get the character & save it
-    //   but don't save CR or LF
-    //
-    bIn = Serial.read();
-      
-    // if \n, terminate command line and don't save the \n
-    //
-    if (bIn == '\n')
-    {
-      strCommand[Cmd_Next] = 0;
-      Cmd_Next = -1;
-      break;
-    }
-    else if (bIn != '\r')
-    {
-      // here if NOT \r or \n
-      //
-      strCommand[ Cmd_Next ] = bIn;
-      Cmd_Next++;
-    }
-    // if \r, do nothing with char
-    
-  } // end of loop reading incoming data
-  
-} // end of ReadCMD
-
-
-
-//===========================================================================
-// GetFlashParms() - get parameters for Flash command AND sets flash variables
-//    return: true if success, false otherwise
-//
-//===========================================================================
-bool GetFlashParms(char *inParms)
-{
-  String parm = "";
-  long parmCount;
-  long parmDuration;
-
-  // Do we have any parameters?
-  //    search for first non-space char
-  //
-  while( (*inParms != 0) && isWhitespace(*inParms) )
-  {
-    inParms++;
-  }
-
-  // check for no parameters
-  //    default to 5 second pulse
-  //
-  if (*inParms == 0)
-  {
-     PPS_Flash_Duration_Sec = 5;
-    return true;
-  }
-
-  //*********************************************
-  // Looks like we have at least one parameter - assume it is the count
-  // 
-  while( (*inParms != 0) && !isWhitespace(*inParms) )
-  {
-    if ( !isDigit(*inParms) )
-    {
-      // ERROR
-      return(false);
-    }
-
-    parm += *inParms;
-
-    inParms++;
-  }
-
-  // we now have a potential count parm
-  //
-  parmCount = parm.toInt();
-  if (parmCount == 0)
-  {
-    return false;       // return error
-  }
-
-  //***********************************
-  // Look for Duration value
-  //
-
-  // find first non-space char - to start duration parm
-  //
-  while( (*inParms != 0) && isWhitespace(*inParms) )
-  {
-    inParms++;
-  }
-
-  if (*inParms == 0)
-  {
-    // no Duration parm, use default and leave
-    //
-    PPS_Flash_Duration_Sec = 5;
-    return true;
-  }
-
-  // get duration parm chars
-  //
-  parm = "";
-  while( (*inParms != 0) && !isWhitespace(*inParms) )
-  {
-    if ( !isDigit(*inParms) )
-    {
-      // ERROR
-      return(false);
-    }
-
-    parm += *inParms;
-
-    inParms++;
-  }
-
-  // we now have a potential count parm
-  //  * must be greater than 0 and less than 900ms
-  //
-  parmDuration = parm.toInt();
-  if ((parmDuration == 0) || (parmDuration > 900000))
-  {
-    return false;       // return error
-  }
-
-  //*********************************
-  // OK - we have a count and a duration (in seconds)
-  //
-  PPS_Flash_Duration_Sec = parmDuration;
-  
-}  // end of GetFlashParms
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++
 //
@@ -1248,7 +1056,6 @@ void setup()
     }
   } // end of waiting for GPS 
 
-#if 0
   //******************
   //  Now wait for Sync to finish
   //  - PPS ISR will change mode to TimeValid after sync period finishes 
@@ -1270,7 +1077,24 @@ void setup()
       while(1);
     }
   }
-#endif
+
+  //******************
+  //  Now initialize logging
+  //
+  if (!LogInit())
+  {
+    Serial.println("Fatal error - stopping!");
+    while(1);
+  }
+
+  //******************
+  //   TESTING - open log file now
+  //******************
+  if (!LogFileOpen())
+  {
+    Serial.println("Fatal error - stopping!");
+    while(1);
+  }
 
   //*****************
   //  Now start timing...
@@ -1362,14 +1186,20 @@ void loop()                     // run over and over again
   // Output logging info
   //
   now_ms = millis();
-  if ((now_ms - LastFlush) > 1000)
+  LogFlushFull();         // flush any full buffers to the file...
+
+  // in PPS mode, update disk every second...
+  //
+  if ((now_ms - LastFlush) > 2000)
   {
-    LogFlushAll();
     LastFlush = now_ms;
+    LogFlushToFile();       // update the file with the current data
 
     if (DeviceMode == TimeValid)
     {
-      Serial.println("DeviceMode = TimeValid");
+      Serial.print("DeviceMode = TimeValid : ");
+      Serial.println(sec_ss);
+      
     }
     else if (DeviceMode == Syncing)
     {
@@ -1389,48 +1219,16 @@ void loop()                     // run over and over again
     }
     else
     {
-      Serial.println("unknow mode!");
+      Serial.println("unknown mode!");
     }
     
  } 
 
   //***********************
-  //  now check for an incomming command
-  //   but we don't execute the command until we see a newline...
+  //  now check for an incomming command from USB port
   //
   ReadCMD();
  
-  //*******************************************************
-  //  Execute pending command
-  //
-  if (Cmd_Next < 0)
-  {
-    // ECHO command string to USB port
-    //
-    
-    Serial.print("CMD <");
-    Serial.print(strCommand);
-    Serial.print(">\r\n");
-
-    // EXECUTE command
-    //
-    Cmd_Next = 0;
-
-    // Commands
-    //   ^flash [Count [Duration]], where Count = number of flashes and Duration = length of flash in microseconds (16 us resolution)
-    //
-    if (strncmp(strCommand,"^flash",6) == 0)
-    {
-      // look for command options: Count, then Duration
-      //
-      if (GetFlashParms( &strCommand[6] ))
-      {
-        pinMode(4,OUTPUT);    // ENABLE OC0B output to LED       
-      }
-      
-    }
-    
-  } // end of handling a pending command
 
 } // end of loop()
 

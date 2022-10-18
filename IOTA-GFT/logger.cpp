@@ -32,18 +32,25 @@
 // SD chip select pin.
 const uint8_t SD_CS_PIN = SS;
 
+// Misc
+//
+bool blnLogSerial = true;      // echo log to serial port?
+
 //------------------------------------------------------------------------------
 // File definitions.
 //
 // Maximum file size in bytes.
 // The program creates a contiguous file with MAX_FILE_SIZE_MiB bytes.
 // The file will be truncated if logging is stopped early.
-const uint32_t MAX_FILE_SIZE_MiB = 100;  // 100 MiB file.
+//const uint32_t MAX_FILE_SIZE_MiB = 100;  // 100 MiB file.
+const uint32_t MAX_FILE_SIZE_MiB = 1;  // testing ... 1 MiB file.
 const uint32_t MAX_FILE_SIZE = MAX_FILE_SIZE_MiB << 20;
 
 // log file name
+//   YYYY-MM-DD_HH-MM-SS.log
 //
-char fileName[10] = "test.txt";
+char fileName[25] = "YYYY-MM-DD_HH-MM-SS.log";
+bool blnFileOpen = false;
 
 //------------------------
 // SdFat config
@@ -120,11 +127,20 @@ struct data_t {
 char strTime[] = "XXXXXXXX c\r\n";
 
 
-//------------------------------------------
+//=========================================================
 //
 // Functions
 //
+//=========================================================
+
 //------------------------------------------
+//  errorHalt - print error message and halt
+//-----------------------------------------
+void errorHalt(char *strMessage)
+{
+  Serial.println(strMessage);
+  while(1);             // hang!
+}
 
 //---------------------------------------------
 // LogTextWrite - write text string into logging fifo
@@ -192,7 +208,8 @@ bool LogTextWrite(char *strIn, int iCount)
 } // end of LogTextWrite
 
 //---------------------------------------------
-//  LogFlushFull - write out pending FULL data blocks to SD card
+//  LogFlushFull - write out ONE pending FULL data blocks to SD card
+//      true iff block written
 //---------------------------------------------
 bool LogFlushFull()
 {
@@ -201,55 +218,54 @@ bool LogFlushFull()
 
 
   //************
-  //  if full block available, write them to the SD card
+  //  if full block available, write it to the SD card
   //
-  if (fifoCount > 1)
+  if (fifoCount <= 1)
   {
-      // fifoCount > 1 => we have a full block ready
-      //
-      pBlock = &fifoBuffer[fifoTail];
+    // just using one fifo block, no full blocks
+    //
+    return(false);
+  }
+  else
+  {
+    // fifoCount > 1 => we have a full block ready
+    //
+    pBlock = &fifoBuffer[fifoTail];
+    
+    // make sure we have room in the file
+    //
+    if (logFile.curPosition() >= MAX_FILE_SIZE) {
+      // File full => report error and stop
+      errorHalt("Error: Log file full! - halting.");
+    }
 
-      // is tail block full?
-      //
-      if (pBlock->count < 512)
-      {
-        // no -> done
-        return;
-      }
-      
-#if 0
-      // Write tail block data to SD.
-      //
-      m = micros();
-      if (logFile.write(pBlock->data, 512) != 512) {
-        errorHalt("write data failed");
-      }
-      m = micros() - m;
-      if (m > maxLatencyUsec) {
-        maxLatencyUsec = m;
-      }
-#else
-      Serial.write(pBlock->data,512);
-#endif      
-      bytesWritten += 512;
+    // Write tail block data to SD.
+    //
+    m = micros();
+    if (logFile.write(pBlock->data, 512) != 512) {
+      errorHalt("write data failed");
+    }
+    m = micros() - m;
+    if (m > maxLatencyUsec) {
+      maxLatencyUsec = m;
+    }
+ 
+    bytesWritten += 512;
 
-      // Initialize empty block & reset tail pointer
-      //
-      pBlock->count = 0;
-      pBlock->overrun = 0;
-      fifoTail = fifoTail < (FIFO_DIM - 1) ? fifoTail + 1 : 0;
+    // Initialize empty block & reset tail pointer
+    //
+    pBlock->count = 0;
+    pBlock->overrun = 0;
+    fifoTail = fifoTail < (FIFO_DIM - 1) ? fifoTail + 1 : 0;
 
-      fifoCount--;
+    // block written, decrement count
+    //
+    fifoCount--;
 
-#if 0
-      if (logFile.curPosition() >= MAX_FILE_SIZE) {
-        // File full => report error and stop
-        errorHalt("Error: Log file full! - halting.");
-      }
-#endif
+    return(true);
 
-  } // end of while loop
-  
+  } // end of fifo_count > 1 loop
+
 } // end of logFlushFull
 
 //---------------------------------------------
@@ -269,9 +285,9 @@ bool LogFlushAll()
   //
   if (curBlock->count > 0)
   {
-    // write out data from this block
+    
+    // write out data from this partial block
     //
-#if 0
     m = micros();
     if (logFile.write(curBlock->data, curBlock->count) != curBlock->count) {
       errorHalt("write data failed");
@@ -280,20 +296,34 @@ bool LogFlushAll()
     if (m > maxLatencyUsec) {
       maxLatencyUsec = m;
     }
-#else
-    Serial.write(curBlock->data,curBlock->count);
-#endif    
+   
     bytesWritten += curBlock->count;
-    curBlock->count = 0;                // this block now empty
+    curBlock->count = 0;                // head block now empty
   }
   
+  // flush the output to the SD card file.
+  //
+  logFile.flush();
+
   return(true);
 
 } // end of LogFlushAll
 
+//---------------------------------------------
+//  LogFlushToFile - flush pending data to file
+//
+//---------------------------------------------
+void LogFlushToFile()
+{
+  
+  // flush the SD output buffer to the SD card file.
+  //
+  logFile.flush();
+
+}  // end of LogFlushToFile
 
 //---------------------------------------------
-// LogInit - initialize logging 
+// LogInit - create a new log file and clear buffers
 //
 // Returns:
 //  True if no issue, False if overrun
@@ -301,13 +331,114 @@ bool LogFlushAll()
 bool LogInit()
 {
 
+  //************
+  // initialize sdFat
+  //
+  if (!sd.begin(SD_CONFIG)) {
+    Serial.println("Error initializing SD!");
+    return(false);
+  }
+
   //*****************
   // Initialize fifo buffers
+  //   turn off interrupts - just in case...
   //
+  noInterrupts();
   fifoCount = 1;    // first block in use
   fifoHead = 0;
   fifoTail = 0;
+  curBlock = &fifoBuffer[0];
+
+  for( int i=0; i < FIFO_DIM; i++)
+  {
+    fifoBuffer[i].count = 0;
+    fifoBuffer[i].overrun = 0;
+  }
+  interrupts();
+
+  //****************
+  // no file yet...
+  //
+  blnFileOpen = false;
 
   return(true);
 
 } // end of LogInit
+
+//---------------------------------------------
+// LogFileOpen - create a new log file and clear buffers
+//
+//  note: if a log file is already open, close it first
+//
+// Returns:
+//  True if no issue, False if overrun
+//---------------------------------------------
+bool LogFileOpen()
+{
+  bool blnLogExists;
+
+  //***********************
+  //  if file already open, close it now
+  //
+  if (blnFileOpen)
+  {
+    logFile.close();
+    Serial.print("Closed current logfile <");
+    Serial.print(fileName);
+    Serial.println(">");
+    blnFileOpen = false;
+  }
+
+  //******************
+  //  if this file already exists, delete it
+  //
+  blnLogExists = sd.exists(fileName);
+  if (blnLogExists)
+  {
+    Serial.print(F("Removing existing logfile..."));
+    sd.remove(fileName);
+  }
+
+  //******************
+  //  create a new log file
+  //
+  Serial.print("Opening log file on SD card: ");
+  Serial.println(fileName);
+  if (!logFile.open(fileName, O_RDWR | O_CREAT)) {
+    Serial.println("open file failed");
+    return(false);   // dont start!
+  }
+
+// skip pre-allocate for now...
+//
+#if 0  
+  Serial.print("Allocating: ");
+  Serial.print(MAX_FILE_SIZE_MiB);
+  Serial.println(" MiB");
+  if (!logFile.preAllocate(MAX_FILE_SIZE)) {
+    Serial.println("preAllocate failed");
+    return(false);   // don't start!
+  }
+#endif
+  blnFileOpen = true;
+
+  //*****************
+  // Initialize fifo buffers
+  //   turn off interrupts - just in case...
+  //
+  noInterrupts();
+  fifoCount = 1;    // first block in use
+  fifoHead = 0;
+  fifoTail = 0;
+  curBlock = &fifoBuffer[0];
+
+  for( int i=0; i < FIFO_DIM; i++)
+  {
+    fifoBuffer[i].count = 0;
+    fifoBuffer[i].overrun = 0;
+  }
+  interrupts();
+
+  return(true);
+
+} // end of LogFileOpen
