@@ -793,10 +793,15 @@ bool ReadGPS()
       {
         nmeaSentence[nmeaCount] = 0;      // null terminate the sentence
 
-        // log this sentence
+        // IF LED is NOT ON
+        //    log this sentence
+        //  skipping the NMEA LOG during LED flash to avoid filling the SD write buffer
         //
-        LogTextWrite(nmeaTime,9);
-        LogTextWrite(nmeaSentence,nmeaCount);
+        if (!LED_ON)
+        {
+          LogTextWrite(nmeaTime,9);
+          LogTextWrite(nmeaSentence,nmeaCount);
+        }
 
         // call the parser
         //

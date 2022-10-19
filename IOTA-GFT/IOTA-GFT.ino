@@ -1081,6 +1081,9 @@ void setup()
   //******************
   //  Now initialize logging
   //
+  Serial.print("Device mode: ");
+  Serial.println(DeviceMode);
+  Serial.println("Intializing SD card for logging...");
   if (!LogInit())
   {
     Serial.println("Fatal error - stopping!");
@@ -1090,6 +1093,7 @@ void setup()
   //******************
   //   TESTING - open log file now
   //******************
+  Serial.println("Opening log file on SD card...");
   if (!LogFileOpen())
   {
     Serial.println("Fatal error - stopping!");
@@ -1184,45 +1188,51 @@ void loop()                     // run over and over again
 
   //******************************************************
   // Output logging info
+  //  But... not if the LED is ON.  In theory the current drain of the SD card
+  //  might dim the LED.
   //
-  now_ms = millis();
-  LogFlushFull();         // flush any full buffers to the file...
-
-  // in PPS mode, update disk every second...
-  //
-  if ((now_ms - LastFlush) > 2000)
+  if (!LED_ON)
   {
-    LastFlush = now_ms;
-    LogFlushToFile();       // update the file with the current data
+    now_ms = millis();
+    LogFlushFull();         // flush any full buffers to the file...
 
-    if (DeviceMode == TimeValid)
+    // in PPS mode, update disk every second...
+    //
+    if ((now_ms - LastFlush) > 2000)
     {
-      Serial.print("DeviceMode = TimeValid : ");
-      Serial.println(sec_ss);
+      LastFlush = now_ms;
+      LogFlushToFile();       // update the file with the current data
+
+      if (DeviceMode == TimeValid)
+      {
+        Serial.print("DeviceMode = TimeValid : ");
+        Serial.println(sec_ss);
+        
+      }
+      else if (DeviceMode == Syncing)
+      {
+        Serial.println("DeviceMode == Syncing");
+      }
+      else if (DeviceMode == WaitingForGPS)
+      {
+        Serial.println("DeviceMode == WaitingForGPS");
+      }
+      else if (DeviceMode == FatalError)
+      {
+        Serial.println("DeviceMode == FatalError");
+      }
+      else if (DeviceMode == InitMode)
+      {
+        Serial.println("DeviceMode == InitMode");
+      }
+      else
+      {
+        Serial.println("unknown mode!");
+      }
       
-    }
-    else if (DeviceMode == Syncing)
-    {
-      Serial.println("DeviceMode == Syncing");
-    }
-    else if (DeviceMode == WaitingForGPS)
-    {
-      Serial.println("DeviceMode == WaitingForGPS");
-    }
-    else if (DeviceMode == FatalError)
-    {
-      Serial.println("DeviceMode == FatalError");
-    }
-    else if (DeviceMode == InitMode)
-    {
-      Serial.println("DeviceMode == InitMode");
-    }
-    else
-    {
-      Serial.println("unknown mode!");
-    }
-    
- } 
+    } // end of check for flush to file
+
+  }
 
   //***********************
   //  now check for an incomming command from USB port

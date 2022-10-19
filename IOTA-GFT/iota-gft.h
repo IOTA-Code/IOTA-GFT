@@ -46,6 +46,8 @@
   };
   extern volatile FlashingMode FlashMode;		// current flashing mode
 
+  extern volatile boolean LED_ON;      			// LED state
+
   //******************
   // Timer info
   //

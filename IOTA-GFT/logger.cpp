@@ -21,6 +21,7 @@
 #include <FreeStack.h>
 #include <SdFat.h>
 #include <sdios.h>
+#include "gpsComm.h"
 
 //---------------------------------------
 //  GLOBALS
@@ -377,6 +378,14 @@ bool LogFileOpen()
 {
   bool blnLogExists;
 
+  uint16_t yr;
+  uint8_t mon;
+  uint8_t day;
+  uint8_t hh;
+  uint8_t mm;
+  uint8_t ss;
+
+
   //***********************
   //  if file already open, close it now
   //
@@ -387,6 +396,23 @@ bool LogFileOpen()
     Serial.print(fileName);
     Serial.println(">");
     blnFileOpen = false;
+  }
+
+  //***********************
+  //  if RMC data valid
+  //    * get the current date/time
+  //    * set filename based on this date/time
+  //
+  if (gpsRMC.valid)
+  {
+    yr = gpsRMC.yr + 2000;
+    mon = gpsRMC.mon;
+    day = gpsRMC.day;
+    hh = gpsRMC.hh;
+    mm = gpsRMC.mm;
+    ss = gpsRMC.ss;
+
+    sprintf(fileName,"%04d-%02d-%02d_%02d-%02d-%02d.log", yr, mon, day,hh,mm,ss);
   }
 
   //******************
@@ -421,6 +447,18 @@ bool LogFileOpen()
   }
 #endif
   blnFileOpen = true;
+
+  //*******************
+  //  set file date/time from RMC sentence
+  //
+  if (gpsRMC.valid)
+  {
+    if (!logFile.timestamp(T_ACCESS|T_CREATE|T_WRITE, yr, mon, day, hh, mm, ss))
+    {
+      Serial.println("File timestamp failed");
+      return(false);   // don't start!
+    }
+  } // end of setting time of file
 
   //*****************
   // Initialize fifo buffers
