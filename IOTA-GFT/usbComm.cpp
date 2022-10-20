@@ -1,13 +1,13 @@
 /*
   usbComm
 
-  Routines for USB communication (with separate computer).  These routines are divided into
+  Routines for parsing and executing commands sent to this flashing device via USB.  These routines are divided into
   three sections: manual operations, event file operations, log file operations.
 
   Manual operations allow the user to set/get settings for the general device operation and manually fire off flash sequence. The current operations are:
-    * Echo ON | OFF - enable/disable echo of the GPS NMEA data to the usb comm port.
+    * echo ON | OFF - enable/disable echo of the GPS NMEA data to the usb comm port.
     * Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
-    * Flash Duration [X] - set/set the current flash duration 
+    * Flash Duration [X] - get/set the current flash duration 
     * Flash Now - execute a flash sequence now
     * Flash Time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
     * ? or HELP - list these commands
@@ -55,8 +55,12 @@ usbMode CurrentMode;      // current operating mode of USB comm
 // Command string from the PC
 //
 #define CommandSize 100               // max size of a command line
-char strCommand[ CommandSize + 1 ];
+char strCommand[ CommandSize + 1 ];   // null terminated command line
 int Cmd_Next;                         // speed optimization ( -1 => full command pending )
+
+char idxToken[10];                    // starting index of tokens in command string - separated by spaces
+int lenToken[10];                     // length of the non-blank chars in this token
+int tokenCount;                       // # of tokens in string
 
   // PPS mode settings
 int PPS_Flash_Duration_Sec = 5;                 // duration of one LED "flash" in seconds
@@ -65,7 +69,95 @@ int Flash_Test_Interval = 60;					// # of seconds between flash sequences while 
 
 //===========================================================================================================
 //
-//   FUNCTIONS
+//   MISC FUNCTIONS
+//
+//===========================================================================================================
+
+
+//--------------------------------------------------------------------------------------
+//  FindTokens - find non-space tokens in null terminated command string
+//--------------------------------------------------------------------------------------
+void FindTokens()
+{
+  int idx;
+  char c;
+
+  // init
+  //
+  tokenCount = 0;
+  idx = 0;
+
+  // sanity check
+  //
+  if (strCommand[0] == 0)
+  {
+    // empty command line - just leave now
+    //
+    return;
+  }
+
+  // walk through command string looking for non-blank tokens
+  //
+  while( strCommand[idx] != 0 )
+  {
+    // skip all blank chars to find start of a token
+    //
+    while (strCommand[idx] == ' ')
+    {
+      idx++;
+    }
+
+    // first non-blank char is null => end of string
+    //    => no more tokens => leave now
+    //
+    if (strCommand[idx] == 0)
+    {
+      return;
+    }
+
+    // found a non-blank char in the string => start of new token
+    //
+    idxToken[tokenCount] = idx;   // save starting index of this token
+    tokenCount++;                 // new token => bump count
+
+    // now consume all non-blank chars to find end of this token
+    //
+    while( strCommand[idx] != ' ')
+    {
+      if (strCommand[idx] == 0)
+      {
+        // end of string => end of token, exit the loop
+        //
+        break;
+      }
+      idx++;
+    }
+
+    // we have reached the end of this token
+    // record length of this token
+    //
+    lenToken[tokenCount-1] = (idx - idxToken[tokenCount-1]);
+
+    // if we have room, find next token
+    //
+    if (tokenCount == 10)
+    {
+      // we only have room for 10 tokens, leave now
+      //
+      return;
+    }
+
+  } // end of loop through all chars of string
+
+  // all done
+  //
+  return;
+
+} // end of FindTokens
+
+//===========================================================================================================
+//
+//   MANUAL OPERATIONS FUNCTIONS
 //
 //===========================================================================================================
 
@@ -184,9 +276,11 @@ void ReadCMD()
 {
 
   byte bIn;
+  int idx;
   
   // read command from PC
   //  - one byte at a time
+  //  - converts all characters to lower case!
   //  - command terminates with a Newline
   //
   while ( Serial.available() > 0 )
@@ -222,7 +316,7 @@ void ReadCMD()
     {
       // here if NOT \r or \n
       //
-      strCommand[ Cmd_Next ] = bIn;
+      strCommand[ Cmd_Next ] = tolower(bIn);
       Cmd_Next++;
     }
     // if \r, do nothing with char
@@ -231,7 +325,7 @@ void ReadCMD()
 
 
   //*******************************************************
-  //  Execute any pending command
+  //  if we have a full command, execute the command now
   //
   if (Cmd_Next < 0)
   {
@@ -242,24 +336,64 @@ void ReadCMD()
     Serial.print(strCommand);
     Serial.print(">\r\n");
 
-    // EXECUTE command
+    // get ready for next command
     //
     Cmd_Next = 0;
 
-    // Commands
-    //   ^flash [Count [Duration]], where Count = number of flashes and Duration = length of flash in microseconds (16 us resolution)
+    // finds tokens in the command line
     //
-    if (strncmp(strCommand,"^flash",6) == 0)
+    FindTokens();
+
+    // if no tokens, ignore the command
+    //
+    if (tokenCount == 0)
     {
-      // look for command options: Count, then Duration
-      //
-      if (GetFlashParms( &strCommand[6] ))
-      {
-        pinMode(4,OUTPUT);    // ENABLE OC0B output to LED       
-      }
-      
+      return;
     }
-    
+
+    //***************
+    //  Which command?
+    //   first token => type of command
+    //
+
+    //-----------------------------
+    // MANUAL Operations Commands
+    //
+
+    //  * echo ON | OFF - enable/disable echo of the GPS NMEA data to the usb port.
+    //
+    idx = idxToken[0];        // start of first token
+    if (strncmp(strCommand+idx,"echo", 4) == 0)
+    {
+      if (tokenCount < 2)
+      {
+        // should be two tokens...
+        Serial.println("Error parsing command.");
+        return;
+      }
+      idx = idxToken[1];    // second token
+      if (strncmp(strCommand+idx,"on",2) == 0)
+      {
+        // turn on echo of NMEA data
+        //
+        blnEchoNMEA = true;
+      }
+      else if (strncmp(strCommand+idx,"off",3) == 0)
+      {
+        // turn OFF echo
+        //
+        blnEchoNMEA = false;
+      }
+      else
+      {
+        // format error
+        //
+        Serial.println("Error parsing command.");
+        return;
+      }
+    }   // end of echo command
+
+
   } // end of handling a pending command
 
 
