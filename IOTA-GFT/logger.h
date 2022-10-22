@@ -30,6 +30,13 @@ extern const uint16_t BLOCK_SIZE;
 
 extern block_t fifoBuffer[];      // allocate buffer space
 
+  // SD objects
+extern SdExFat sd;
+
+extern ExFatFile logFile;
+extern ExFatFile rootDir;    // root directory
+extern ExFatFile tmpFile;
+
 
   //******************
   // function prototypes

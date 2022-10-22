@@ -8,10 +8,12 @@
 */
 
 #include <Arduino.h>
+#include <SdFat.h>
 #include "gpsComm.h"
 #include "iota-gft.h"
 #include "ublox.h"
 #include "logger.h"
+
 
 //---------------------------------------
 //  GLOBALS

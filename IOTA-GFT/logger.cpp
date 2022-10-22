@@ -69,8 +69,9 @@ bool blnFileOpen = false;
 //
 SdExFat sd;
 
-ExFatFile logFile;
-
+ExFatFile logFile;    // log file
+ExFatFile rootDir;    // root directory
+ExFatFile tmpFile;    // misc file pointer
 
 //------------------------------------------------------------------------------
 // SD write Buffer definitions.
@@ -339,6 +340,16 @@ bool LogInit()
     Serial.println("Error initializing SD!");
     return(false);
   }
+
+  //***************
+  //  Root directory object
+  //
+  if (!rootDir.open("/"))
+  {
+    Serial.println("root dir.open failed");
+    return(false);
+  }
+
 
   //*****************
   // Initialize fifo buffers

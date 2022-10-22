@@ -10,6 +10,8 @@
     * Flash Duration [X] - get/set the current flash duration 
     * Flash Now - execute a flash sequence now
     * Flash Time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
+    * Flash Time Clear - clear all flash times
+    * Flash Time  - list all flash times
     * ? or HELP - list these commands
 
   Event file operations with set/get settings for future occultation event observations.  The event file specifies the timeframe for timing flashes associated with a future event.
@@ -19,18 +21,20 @@
 
   Log file operations.  If a flash sequence occurs during after the device is powered up, the device creates a log file for recording all timing information while the device remains powered.
   With the log file commands, the user can list the log files, download log files, and delete log files on the device.
-    * log file ls
+    * log file - list any log files
     * log file read filename
     * log file rm filename
 
 */
 
 #include <Arduino.h>
+#include <SdFat.h>
 #include "gpsComm.h"
 #include "iota-gft.h"
 #include "ublox.h"
 #include "logger.h"
 #include "usbComm.h"
+#include "SdFat.h"
 
 //===========================================================================================================
 //
@@ -277,6 +281,10 @@ void ReadCMD()
 
   byte bIn;
   int idx;
+  int iTmp;
+  long lTmp;
+  bool blnTmp;
+  char strTmp[25];
   
   // read command from PC
   //  - one byte at a time
@@ -377,12 +385,14 @@ void ReadCMD()
         // turn on echo of NMEA data
         //
         blnEchoNMEA = true;
+        return;
       }
       else if (strncmp(strCommand+idx,"off",3) == 0)
       {
         // turn OFF echo
         //
         blnEchoNMEA = false;
+        return;
       }
       else
       {
@@ -393,6 +403,286 @@ void ReadCMD()
       }
     }   // end of echo command
 
+    //--------------------
+    // flash commands
+    //
+    else if (strncmp(strCommand+idx,"flash", 5) == 0)
+    {
+      if (tokenCount < 2)
+      {
+        // should be at least two tokens...
+        Serial.println("Error parsing command.");
+        return;
+      }
+
+      idx = idxToken[1];    // second token
+
+      // Flash now?
+      //
+      if (strncmp(strCommand+idx,"now",3) == 0)
+      {
+        // turn on flash now
+        //
+        PPS_Flash_Countdown_Sec = PPS_Flash_Duration_Sec;
+        return;
+      } // end of "flash now"
+
+      //  * Flash Duration [X] - get/set the current flash duration 
+      else if (strncmp(strCommand+idx,"duration",8) == 0)
+      {
+        if (tokenCount < 3)
+        {
+          // Get duration value
+          Serial.print("flash duration: ");
+          Serial.println(PPS_Flash_Duration_Sec);
+          return;
+        }
+
+        // assume we are setting duration
+        //
+        idx = idxToken[2];
+
+        // try to parse the value
+        //  should work without null terminating the token...
+        //
+        lTmp = atol(strCommand+idx);
+        if (lTmp <= 0)
+        {
+          Serial.println("Error parsing command.");
+          return;
+        }
+
+        // set the value
+        //
+        PPS_Flash_Duration_Sec = lTmp;
+        return;
+
+      } // end of "flash duration "
+
+      // Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
+      else if (strncmp(strCommand+idx,"mode",4) == 0)
+      {
+        if (tokenCount < 3)
+        {
+          // Get duration value
+          if (FlashMode == PPS)
+          {
+            Serial.println("PPS flash mode.");
+            return;
+          }
+          else if (FlashMode == EXP)
+          {
+            Serial.println("EXP flash mode.");
+            return;
+          }
+          else
+          {
+            Serial.println("Unknown flash mode!");
+            return;
+          }
+          return;
+        }
+
+        // 3 parameters => assume we are trying to set the mode
+        //
+        idx = idxToken[2];
+        if (strncmp(strCommand+idx,"PPS",3) == 0)
+        {
+          FlashMode = PPS;
+          return;
+        }
+        else if (strncmp(strCommand+idx,"EXP",3) == 0)
+        {
+          FlashMode = EXP;
+          return;
+        }
+        else
+        {
+          Serial.println("Error parsing command.");
+          return;
+        }
+
+      } // end of "flash mode"
+
+      // flash time ...
+      else if (strncmp(strCommand+idx,"time",4) == 0)
+      {
+        // "flash time" command
+        //
+
+        // check for "flash time" with no args => list current flash times
+        //
+        if (tokenCount < 3)
+        {
+          char strTime[20] = "YYYY-MM-DD HH:MM:SS";
+          int duration = PPS_Flash_Duration_Sec;
+
+          Serial.println("Flash Times:");
+          for( int i = 0; i < FT_Count; i++)
+          {
+            sprintf(strTime,"%04d-%02d-%02d %02d-%02d-%02d [%04d (sec)]",
+                    FlashTimes[i].yyyy,FlashTimes[i].mon,FlashTimes[i].day,
+                    FlashTimes[i].hh,FlashTimes[i].mm,FlashTimes[i].ss,duration);
+            Serial.println(strTime);
+          }
+          Serial.println();
+          return;
+        }
+
+        // now handle three token flash time commands
+        //
+        idx = idxToken[2];
+
+        //  flash time clear - clear all flash times
+        if (strncmp(strCommand+idx,"clear",5)==0)
+        {
+          FT_Count = 0;
+          return;
+        }
+
+        //  * flash time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
+        else 
+        {
+          // assume this is attempt to set a time
+          //
+
+        } // end of flash time X commands
+
+      } // end of flash time commands
+
+      else
+      {
+        Serial.println("unknown command.");
+        return;
+      }
+
+
+    } // end of flash command logic
+
+    //--------------------
+    // log file commands
+    //
+    else if (strncmp(strCommand+idx,"log", 3) == 0)
+    {
+      if (tokenCount < 2)
+      {
+        // should be at least two tokens...
+        Serial.println("Error parsing command.");
+        return;
+      }
+
+      idx = idxToken[1];    // second token
+
+      // "log file" commands
+      //
+      if (strncmp(strCommand+idx,"file",4) == 0)
+      {
+
+        // "log file" => list log files
+        //
+        if (tokenCount < 3)
+        {        
+          // walk through file list and output names for any *.log files
+          //
+          Serial.println("Log files:");
+
+          rootDir.rewind();   // start at beginning of dir
+
+          // Open next file 
+          //
+          while (tmpFile.openNext(&rootDir, O_RDONLY))
+          {
+            tmpFile.getName(strTmp,25);   // get the name of this file
+
+            if (rootDir.getError())
+            {
+              Serial.println("error listing files in directory.");
+              return;
+            }
+
+            // check filename
+            //
+            blnTmp = true;
+            iTmp = strlen(strTmp);
+            if (tmpFile.isDir())
+            {
+              blnTmp = false;   // directory => skip it
+            }
+            else if (iTmp < 4)
+            {
+              blnTmp = false;   // too short
+            }
+            else if (strncmp(strTmp+(iTmp-4),".log",4) != 0)
+            {
+              blnTmp = false;   // not a .log file
+            }
+
+            // log file => output file name
+            if (blnTmp)
+            {
+              Serial.println(strTmp);
+            }
+
+            // close this file
+            //
+            tmpFile.close();
+
+          } // end of loop through files in root dir
+          Serial.println();
+          return;
+
+        }  // list of log files
+
+        idx = idxToken[2];
+
+        //  "log file read" - download contents of log file
+        //
+        if (strncmp(strCommand+idx,"clear",5)==0)
+        {
+          // filename present?
+          //
+          if (idx < 4)
+          {
+            Serial.println("no filename for log file read command.");
+            return;
+          }
+          
+          // read contents of log file & echo to serial port
+          //
+          return;
+
+        } // end of log file read 
+
+        // "log file rm" => delete log file
+        //
+        else if (strncmp(strCommand+idx,"rm",2)==0)
+        {
+          // filename present?
+          //
+          if (idx < 4)
+          {
+            Serial.println("no filename for log file rm command.");
+            return;
+          }
+
+          // remove the file
+          //
+
+          return;
+        } // end of log file rm command
+
+        Serial.println("unknown command");
+        return;
+
+      } // end of "log file"
+
+    } // end of log file commands
+
+    else
+    {
+      Serial.println("unknown command.");
+      return;
+    } // end of command options
 
   } // end of handling a pending command
 

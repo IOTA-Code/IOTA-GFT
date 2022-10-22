@@ -38,6 +38,7 @@
 //=======================================
 //  INCLUDES
 //=======================================
+#include <SdFat.h>
 #include "iota-gft.h"
 #include "ublox.h"
 #include "gpsComm.h"
@@ -143,7 +144,10 @@ unsigned long lastTimeButtonStateChanged = 0;
 //  INPUTS
 //
 volatile bool blnEchoNMEA = false;
-volatile bool blnEchoPPS = false;
+
+struct MJDTime FlashTimes[10];          // up to 10 future flash times
+int FT_Count = 0;                       // # of flash times in array
+
 
 //********
 //  Logging outputs

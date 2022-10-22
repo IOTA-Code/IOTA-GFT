@@ -31,6 +31,22 @@
   extern short int SYNC_SECONDS;                // # of seconds for syncing to GPS time
   extern volatile short int TimeSync;           // ( > 0 ) => we are syncing to GPS sentence times = # of seconds remaining for sync (small value so no problem with ints)
 
+  //*****************************************
+  // struct for storing DateTime
+  //
+  struct MJDTime
+  {
+    uint16_t yyyy;      // year
+    uint8_t mon;        // month
+    uint8_t day;        // day
+    uint32_t MJD;       // MJD for this date
+
+    uint8_t hh;         // hour
+    uint8_t mm;         // min
+    uint8_t ss;         // sec
+    uint32_t;           // sec of day
+
+  };
 
   //****************************************
   // Flashing Modes
@@ -47,6 +63,7 @@
   extern volatile FlashingMode FlashMode;		// current flashing mode
 
   extern volatile boolean LED_ON;      			// LED state
+  extern volatile int PPS_Flash_Countdown_Sec;           // # of seconds remaining in a PPS flash
 
   //******************
   // Timer info
@@ -86,6 +103,8 @@
   //  Input parms
   //
   extern volatile bool blnEchoNMEA;
+  extern struct MJDTime FlashTimes[];           // up to 10 future flash times
+  extern int FT_Count;                          // # of flash times in array
 
   //***********
   // debug
