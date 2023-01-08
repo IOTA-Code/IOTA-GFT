@@ -35,6 +35,8 @@ const uint8_t SD_CS_PIN = SS;
 
 // Misc
 //
+bool blnLogEnable = false;    // enable logging
+bool blnLogFile = true;       // log to file
 bool blnLogSerial = true;      // echo log to serial port?
 
 //------------------------------------------------------------------------------
@@ -77,7 +79,7 @@ ExFatFile tmpFile;    // misc file pointer
 // SD write Buffer definitions.
 //    * FIFO queue of data blocks
 //
-const uint8_t FIFO_DIM = 8;   // # of blocks in FIFO
+const uint8_t FIFO_DIM = 6;   // # of blocks in FIFO
 
 // data block definition
 //
@@ -124,9 +126,10 @@ struct data_t {
   uint8_t comma;
 };
 
-// prototype time string
+// Line from file
 //
-char strTime[] = "XXXXXXXX c\r\n";
+#define MAXLINE 100
+char strLine[MAXLINE+1];
 
 
 //=========================================================
@@ -156,7 +159,13 @@ void errorHalt(char *strMessage)
 //---------------------------------------------
 bool LogTextWrite(char *strIn, int iCount)
 {
-  
+  // is logging enabled?
+  //
+  if (!blnLogEnable)
+  {
+    return true;      // no error, just ignore the request
+  }
+
   // copy char bytes into the current fifo buffer
   //
   for ( ; iCount > 0; iCount--)
@@ -491,3 +500,67 @@ bool LogFileOpen()
   return(true);
 
 } // end of LogFileOpen
+
+//---------------------------------------------
+// EchoFile - echo contents of file to serial port
+//  Inputs:
+//    fname = null terminated name of file to read
+//
+// Returns:
+//  True if no issue, False if overrun
+//---------------------------------------------
+bool EchoFile(char* fname)
+{
+  int retval;
+
+  // verify the file exists
+  //
+  if (!sd.exists(fname))
+  {
+    Serial.print("file <");
+    Serial.print(fname);
+    Serial.println("> does not exist.");
+    return(false);
+  }
+
+  // Open the file
+  //
+  if (!tmpFile.open(fname,O_RDONLY))
+  {
+    Serial.println("Error opening file.");
+    return(false);
+  }
+
+  // Mark start of file with "[" on a line
+  //
+  Serial.println("{");
+
+  // read each line and echo to the serial port
+  //
+  while( (retval=tmpFile.fgets(strLine,MAXLINE)) > 0)
+  {
+    // replace LF with CRLF
+    //
+    strLine[retval-1] = '\r';
+    strLine[retval] = '\n';
+    strLine[retval+1] = 0;
+    // output the line
+    //
+    Serial.print(strLine);
+  }
+  if (retval < 0)
+  {
+    return(false);    // error
+  }
+
+  // mark end of file
+  //
+  Serial.println("}");
+
+  // done
+  //
+  tmpFile.close();
+
+  return(true);
+
+} // end of EchoFile

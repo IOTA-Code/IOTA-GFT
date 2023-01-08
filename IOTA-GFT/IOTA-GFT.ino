@@ -1065,7 +1065,7 @@ void setup()
   //  - PPS ISR will change mode to TimeValid after sync period finishes 
   //
   tBegin = millis();
-  while(DeviceMode == Syncing)
+  while(DeviceMode != TimeValid)
   {
     // get pending serial data from GPS
     //
@@ -1082,6 +1082,7 @@ void setup()
     }
   }
 
+
   //******************
   //  Now initialize logging
   //
@@ -1093,7 +1094,7 @@ void setup()
     Serial.println("Fatal error - stopping!");
     while(1);
   }
-
+ 
   //******************
   //   TESTING - open log file now
   //******************
@@ -1103,12 +1104,12 @@ void setup()
     Serial.println("Fatal error - stopping!");
     while(1);
   }
-
+ 
   //*****************
-  //  Now start timing...
+  //  Now start ...
   //
+  blnLogEnable = true;
   Serial.println("Ready for timing...");
-  
 
 } // end of setup
 
@@ -1207,6 +1208,7 @@ void loop()                     // run over and over again
       LastFlush = now_ms;
       LogFlushToFile();       // update the file with the current data
 
+/* debug ...
       if (DeviceMode == TimeValid)
       {
         Serial.print("DeviceMode = TimeValid : ");
@@ -1233,7 +1235,9 @@ void loop()                     // run over and over again
       {
         Serial.println("unknown mode!");
       }
-      
+
+  end of debug */
+
     } // end of check for flush to file
 
   }

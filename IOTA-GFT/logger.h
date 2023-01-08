@@ -17,6 +17,12 @@ extern volatile uint16_t fifoCount; // volatile - shared, ISR and background.
 extern volatile uint16_t fifoHead;  // Only accessed by buffer writer.
 extern volatile uint16_t fifoTail;  // Only accessed by sd writer.
 
+// control variables
+//
+extern bool blnLogEnable;   // true => logging is enabled
+extern bool blnLogFile;     // true => file logging is enabled
+extern bool blnLogSerial;   // flase => serial port logging is enabled
+
 // data block definition
 //
 extern const uint8_t FIFO_DIM;   // # of blocks in FIFO
@@ -47,5 +53,6 @@ extern ExFatFile tmpFile;
   extern void LogFlushToFile();
   extern bool LogInit();
   extern bool LogFileOpen();
+  extern bool EchoFile(char*);
 
 #endif
