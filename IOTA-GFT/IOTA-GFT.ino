@@ -59,6 +59,9 @@ int LED_PIN = 9;            // PIN for LED output
 //=======================================
 
 volatile OperatingMode DeviceMode;    // current operating mode
+unsigned long tBeginWait;
+bool fStarted;                        // set to true when we first enter TimeValid mode
+
 
 volatile FlashingMode FlashMode;		// current flashing mode
 
@@ -75,7 +78,7 @@ bool fEventDefined  = false;	// true if event defined
 volatile unsigned short timer4_ov;    // timer 4 overflow count = high word of "time" (32ms)
 volatile unsigned short timer5_ov;    // timer 5 overflow count  
 
-const byte OCR2Alevel = 159;  		  			// PWM frequency set; on Timer 2 with prescaler = 1, 99 makes 160kHz, 159 = 100kHz, 199 = 80kHz
+byte OCR2Alevel = 159;  		  			// PWM frequency set; on Timer 2 with prescaler = 1, 99 makes 160kHz, 159 = 100kHz, 199 = 80kHz
 byte flashlevel = 100;                    // flash brightness level in percent (0 to 100)
 
 const unsigned long Timer3_us = 64;				// microseconds per led timer clock count (x1024 prescaler)
@@ -366,6 +369,7 @@ ISR( TIMER4_CAPT_vect)
       DeviceMode = Syncing;
       TimeSync = SYNC_SECONDS;
 
+
       tk_pps_interval_total = 0;
       tk_pps_interval_count = 0;
     }
@@ -491,6 +495,7 @@ ISR( TIMER4_CAPT_vect)
     //
     DeviceMode = Syncing;
     TimeSync = SYNC_SECONDS;
+
     tk_pps_interval_total = 0;
     tk_pps_interval_count = 0;
         
@@ -911,9 +916,6 @@ long TimeToSecOfDay(int hh, int mm, int ss)
 //===============================================================
 void setup()  
 {    
-  unsigned long tNow;
-  unsigned long tBegin;
-  
   unsigned int sReg;
 
   int retVal;
@@ -1040,76 +1042,18 @@ void setup()
   //  - after NMEA data valid, next PPS ISR will change the device mode to "Syncing" 
   //
   DeviceMode = WaitingForGPS;
-  Serial.println("Waiting for GPS...");
+  tBeginWait = millis();
 
-  tBegin = millis();
-  while( DeviceMode == WaitingForGPS)
-  {
-    // get pending serial data from GPS
-    //
-    ReadGPS();
-
-    // wait up to 10 minutes for valid GPS
-    //
-    tNow = millis();
-    if ((tNow - tBegin) > (10 * 60000))
-    {
-      Serial.println("Timeout waiting for GPS.");
-      DeviceMode = FatalError;
-      while(1);
-    }
-  } // end of waiting for GPS 
+  fStarted = false;   // startup logic will happen later after we have GPS lock
 
   //******************
-  //  Now wait for Sync to finish
-  //  - PPS ISR will change mode to TimeValid after sync period finishes 
+  //  Initialize SD card for logging
   //
-  tBegin = millis();
-  while(DeviceMode != TimeValid)
-  {
-    // get pending serial data from GPS
-    //
-    ReadGPS();
-
-    // wait up to 10 minutes for Sync
-    //
-    tNow = millis();
-    if ((tNow - tBegin) > (10 * 60000))
-    {
-      Serial.println("Sync failed.");
-      DeviceMode = FatalError;
-      while(1);
-    }
-  }
-
-
-  //******************
-  //  Now initialize logging
-  //
-  Serial.print("Device mode: ");
-  Serial.println(DeviceMode);
   Serial.println("Intializing SD card for logging...");
   if (!LogInit())
   {
-    Serial.println("Fatal error - stopping!");
-    while(1);
+    Serial.println("Error initialing SD card -> Fatal error!");
   }
- 
-  //******************
-  //   TESTING - open log file now
-  //******************
-  Serial.println("Opening log file on SD card...");
-  if (!LogFileOpen())
-  {
-    Serial.println("Fatal error - stopping!");
-    while(1);
-  }
- 
-  //*****************
-  //  Now start ...
-  //
-  blnLogEnable = true;
-  Serial.println("Ready for timing...");
 
 } // end of setup
 
@@ -1117,28 +1061,43 @@ void setup()
 //==========================================================================
 //  LOOP
 //
-//  Basic algorithm
-//	- check for button press
-//  - Keep checking for GPS data until there is none
+//  IF TimeValid
+//    check for button press
+//    execute startup logic on first time through (after moving to TimeValid mode)
+//  END
+
+//  IF WaitingForGPS
+//    check for timeout
+//  ELSE IF Syncing
+//    check for timeout
+//  ENDIF
+//  - check for GPS serial data
 //  - Then check for incomming commands from PC
 //  - Then execute PC commands
-//
+//  ENDIF
 //============================================================================
 void loop()                     // run over and over again
 {
+  unsigned long tNow;  
   unsigned long now_ms;
   byte buttonReading;
 
   
   //******************************************************
-  // check for Button Press (with debouncing)
-  //   => if not flashing, initiate a flash
-  //   note: button only works in TimeValid mode
+  //  IF TimeValid
+  //    check for button press
+  //  ELSE
+  //    check for timeouts on WaitingForGPS or Syncing
   //
   //******************************************************
 
   if (DeviceMode == TimeValid)
   {
+      //  TimeValid
+      //    check for Button Press (with debouncing)
+      //   => if not flashing, initiate a flash
+      //   note: button only works in TimeValid mode
+
     buttonReading = digitalRead(BUTTON_PIN);
 
     // check to see if you just pressed the button
@@ -1184,7 +1143,34 @@ void loop()                     // run over and over again
     }
     lastButtonState = buttonReading;    // save the current reading for next time in the loop
     
-  }  // end of checking button while TimeValid
+    // Startup tasks
+    //
+    if (!fStarted)
+    {
+    
+      //******************
+      //   open log file now
+      //******************
+      Serial.println("Opening log file on SD card...");
+      if (!LogFileOpen())
+      {
+        Serial.println("Error opening log file: Fatal error!");
+      }
+    
+      //*****************
+      //  Now start ...
+      //
+      blnLogEnable = true;
+      Serial.println("Status:Ready");
+
+      //  we have completed startup, set the flag
+      //
+      fStarted = true; 
+
+    }  // done with startup logic
+
+  }  // end of TimeValid logic
+
 
   //******************************************************
   //  check for pending data from GPS
@@ -1222,6 +1208,11 @@ void loop()                     // run over and over again
       else if (DeviceMode == WaitingForGPS)
       {
         Serial.println("DeviceMode == WaitingForGPS");
+        if (gpsRMC.valid) Serial.println("gpsRMC.valid");
+        if (gpsPUBX04.valid) Serial.println("gpsPUBX04.valid");
+        Serial.print("tk_pps = ");
+        Serial.print(logPPS);
+
       }
       else if (DeviceMode == FatalError)
       {
