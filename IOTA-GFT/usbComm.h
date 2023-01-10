@@ -11,9 +11,10 @@
   #define __usbComm_h
 
   // PPS mode settings
-extern int PPS_Flash_Duration_Sec;          // duration of one LED "flash" in seconds
-extern int Flash_Test_Interval;					    // # of seconds between flash sequences while emitting test flashes
-  
+extern int Flash_Duration_Sec;              // duration of one LED "flash" in seconds
+extern int Pulse_Duration_us;               // duration of one shutter pulse (microseconds)
+extern int Pulse_Interval_ms;               // time between pulses
+
 
   //****************
   //   usbComm function prototypes

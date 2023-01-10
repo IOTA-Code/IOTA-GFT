@@ -49,6 +49,16 @@
   };
 
   //****************************************
+  //  Camera Type - determines flashing strategy
+  // 
+  enum Cameras
+  {
+    generic,        // no information from the camera
+    shutter         //  camera sends out an exposure start (shutter) signal
+  };
+  extern Cameras CameraType;
+
+  //****************************************
   // Flashing Modes
   //  PPS mode => flash on PPS signal for X whole seconds
   //	EXP mode => short duration flashes on EXP interrupt (exposure signal)
@@ -64,6 +74,12 @@
 
   extern volatile boolean LED_ON;      			// LED state
   extern volatile int PPS_Flash_Countdown_Sec;           // # of seconds remaining in a PPS flash
+
+  // flashlevel = PWM adjustment
+  //
+  extern byte flashlevel;
+  extern byte OCR2Alevel;
+  extern uint16_t OCR3A_pulse;
 
   //******************
   // Timer info

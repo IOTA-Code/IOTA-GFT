@@ -5,14 +5,22 @@
   three sections: manual operations, event file operations, log file operations.
 
   Manual operations allow the user to set/get settings for the general device operation and manually fire off flash sequence. The current operations are:
+    * mode - get current device operating mode
     * echo ON | OFF - enable/disable echo of the GPS NMEA data to the usb comm port.
+    * ? or HELP - list all commands
+
+    * Camera [generic, shutter] - get/set the camera type 
+
     * Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
     * Flash Duration [X] - get/set the current flash duration 
+    * Flash Level [X] - get/set the current flashlevel = percent flash PWM (0 - 100)
     * Flash Now - execute a flash sequence now
     * Flash Time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
     * Flash Time Clear - clear all flash times
     * Flash Time  - list all flash times
-    * ? or HELP - list these commands
+ 
+    * Pulse Duration [X] - get/set the flash pulse duration (us)
+    * Pulse Interval [X] - get/set the flash pulse interval (ms)
 
   Event file operations with set/get settings for future occultation event observations.  The event file specifies the timeframe for timing flashes associated with a future event.
   The event file commands to download the current event file from the device or upload a new event file to the device.
@@ -66,10 +74,10 @@ char idxToken[10];                    // starting index of tokens in command str
 int lenToken[10];                     // length of the non-blank chars in this token
 int tokenCount;                       // # of tokens in string
 
-  // PPS mode settings
-int PPS_Flash_Duration_Sec = 5;                 // duration of one LED "flash" in seconds
-
-int Flash_Test_Interval = 60;					// # of seconds between flash sequences while emitting test flashes
+  // Flash settings
+int Flash_Duration_Sec = 5;       // duration of one LED "flash" in seconds
+int Pulse_Duration_us = 5000;         // duration of one shutter (EXP) pulse in EXP mode
+int Pulse_Interval_ms = 1000;         // interval between pulses
 
 //===========================================================================================================
 //
@@ -165,110 +173,6 @@ void FindTokens()
 //
 //===========================================================================================================
 
-
-//===========================================================================
-// GetFlashParms() - get parameters for Flash command AND sets flash variables
-//    return: true if success, false otherwise
-//
-//===========================================================================
-bool GetFlashParms(char *inParms)
-{
-  String parm = "";
-  long parmCount;
-  long parmDuration;
-
-  // Do we have any parameters?
-  //    search for first non-space char
-  //
-  while( (*inParms != 0) && isWhitespace(*inParms) )
-  {
-    inParms++;
-  }
-
-  // check for no parameters
-  //    default to 5 second pulse
-  //
-  if (*inParms == 0)
-  {
-     PPS_Flash_Duration_Sec = 5;
-    return true;
-  }
-
-  //*********************************************
-  // Looks like we have at least one parameter - assume it is the count
-  // 
-  while( (*inParms != 0) && !isWhitespace(*inParms) )
-  {
-    if ( !isDigit(*inParms) )
-    {
-      // ERROR
-      return(false);
-    }
-
-    parm += *inParms;
-
-    inParms++;
-  }
-
-  // we now have a potential count parm
-  //
-  parmCount = parm.toInt();
-  if (parmCount == 0)
-  {
-    return false;       // return error
-  }
-
-  //***********************************
-  // Look for Duration value
-  //
-
-  // find first non-space char - to start duration parm
-  //
-  while( (*inParms != 0) && isWhitespace(*inParms) )
-  {
-    inParms++;
-  }
-
-  if (*inParms == 0)
-  {
-    // no Duration parm, use default and leave
-    //
-    PPS_Flash_Duration_Sec = 5;
-    return true;
-  }
-
-  // get duration parm chars
-  //
-  parm = "";
-  while( (*inParms != 0) && !isWhitespace(*inParms) )
-  {
-    if ( !isDigit(*inParms) )
-    {
-      // ERROR
-      return(false);
-    }
-
-    parm += *inParms;
-
-    inParms++;
-  }
-
-  // we now have a potential count parm
-  //  * must be greater than 0 and less than 900ms
-  //
-  parmDuration = parm.toInt();
-  if ((parmDuration == 0) || (parmDuration > 900000))
-  {
-    return false;       // return error
-  }
-
-  //*********************************
-  // OK - we have a count and a duration (in seconds)
-  //
-  PPS_Flash_Duration_Sec = parmDuration;
-  
-}  // end of GetFlashParms
-
 //=====================================
 //  ReadCMD - get input from USB port
 //  
@@ -278,13 +182,22 @@ bool GetFlashParms(char *inParms)
 //  COMMANDS:
 // general commands
 //    echo on | off - enable/disable echo of the GPS NMEA data to the usb port.
+//    mode - get current device operating mode
+//
+// camera commands
+//    camera [generic, shutter ] - get/set camera type
 //
 // flash commands
 //    flash now
 //    flash duration X - X is seconds in PPS mode
+//    flash level X - X is the percent PWM flash level ( 0 - 100 )
 //    flash mode [pps | exp ] - get/set the current flash mode (PPS or EXP)
 //    flash time  - list current flash times
 //    flash time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
+//
+// pulse commands
+//    pulse duration [X] - get/set the flash pulse duration (us)
+//    pulse interval [X] - get/set the flash pulse interval (ms)
 //
 // logging commands
 //    log [on | off ] - enable disable data logging (default = ON)
@@ -387,9 +300,37 @@ void ReadCMD()
     // MANUAL Operations Commands
     //
 
+    idx = idxToken[0];        // start of first token
+
+    //  * mode - get current operating mode
+    //
+    if (strncmp(strCommand+idx,"mode", 4) == 0)
+    {
+
+      switch(DeviceMode)
+      {
+        case InitMode :
+          Serial.println("InitMode");
+          break;
+        case WaitingForGPS :
+          Serial.println("WaitingForGPS");
+          break;
+        case TimeValid :
+          Serial.println("TimeValid");
+          break;
+        case Syncing :
+          Serial.println("Syncing");
+          break;
+        case FatalError :
+          Serial.println("FatalError");
+          break;
+      }
+      return;
+
+    }   // end of mode command
+
     //  * echo ON | OFF - enable/disable echo of the GPS NMEA data to the usb port.
     //
-    idx = idxToken[0];        // start of first token
     if (strncmp(strCommand+idx,"echo", 4) == 0)
     {
       if (tokenCount < 2)
@@ -423,9 +364,58 @@ void ReadCMD()
     }   // end of echo command
 
     //--------------------
+    // camera commands
+    //    camera [ generic, shutter ]
+    //    
+    else if (strncmp(strCommand+idx,"camera", 6) == 0)
+    {
+      if (tokenCount < 2)
+      {
+        // return current camera type
+       switch(CameraType)
+        {
+          case generic :
+            Serial.println("generic");
+            break;
+          case shutter :
+            Serial.println("shutter");
+            break;
+          default:
+            Serial.println("unknown");
+            break;
+        }
+        return;
+      }
+    
+      idx = idxToken[1];    // second token
+
+      if (strncmp(strCommand+idx,"generic",7) == 0)
+      {
+        CameraType = generic;
+        FlashMode = PPS;
+        return;
+      }
+      else if (strncmp(strCommand+idx,"shutter",7) == 0)
+      {
+        CameraType = shutter;
+        FlashMode = EXP;
+        return;
+      }
+      else
+      {
+        Serial.println("ERROR: unable to parse command.");
+        return;
+      }
+
+
+    } // end of camera command logic
+
+
+    //--------------------
     // flash commands
     //    flash now
     //    flash duration X - X is seconds in PPS mode
+    //    flash level X - X is the percent PWM flash level ( 0 - 100 )
     //    flash mode [pps | exp ] - get/set the current flash mode (PPS or EXP)
     //    flash time  - list current flash times
     //    TBD flash time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
@@ -447,7 +437,7 @@ void ReadCMD()
       {
         // turn on flash now
         //
-        PPS_Flash_Countdown_Sec = PPS_Flash_Duration_Sec;
+        PPS_Flash_Countdown_Sec = Flash_Duration_Sec;
         return;
       } // end of "flash now"
 
@@ -458,7 +448,7 @@ void ReadCMD()
         {
           // Get duration value
           Serial.print("flash duration: ");
-          Serial.println(PPS_Flash_Duration_Sec);
+          Serial.println(Flash_Duration_Sec);
           return;
         }
 
@@ -478,10 +468,48 @@ void ReadCMD()
 
         // set the value
         //
-        PPS_Flash_Duration_Sec = lTmp;
+        Flash_Duration_Sec = lTmp;
         return;
 
       } // end of "flash duration "
+
+      //  * Flash level [X] - get/set the current flash level 
+      else if (strncmp(strCommand+idx,"level",5) == 0)
+      {
+        if (tokenCount < 3)
+        {
+          // Get level value
+          Serial.print("flash level: ");
+          Serial.println(flashlevel);
+          return;
+        }
+
+        // assume we are setting level
+        //
+        idx = idxToken[2];
+
+        // try to parse the value
+        //  should work without null terminating the token...
+        //
+        lTmp = atol(strCommand+idx);
+        if (lTmp <= 0)
+        {
+          Serial.println("ERROR: unable to parse command.");
+          return;
+        }
+        else if ((lTmp < 0) || (lTmp > 100))
+        {
+          Serial.println("ERROR: flashlevel not in range (0,100).");
+        }
+
+        // set the value
+        //
+        flashlevel = lTmp;
+        OCR2B = map(flashlevel, 0, 100, 0, OCR2Alevel);  		// adjust value in OCR2B register for PWM
+
+        return;
+
+      } // end of "flash level "
 
       // Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
       else if (strncmp(strCommand+idx,"mode",4) == 0)
@@ -539,7 +567,7 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           char strTime[20] = "YYYY-MM-DD HH:MM:SS";
-          int duration = PPS_Flash_Duration_Sec;
+          int duration = Flash_Duration_Sec;
 
           Serial.println("Flash Times:");
           for( int i = 0; i < FT_Count; i++)
@@ -582,6 +610,91 @@ void ReadCMD()
 
 
     } // end of flash command logic
+
+    //--------------------
+    // pulse commands (for EXP flashing)
+    //  * pulse duration [X] - get/set the flash pulse duration (us)
+    //  * pulse interval [X] - get/set the flash pulse interval (ms)
+    //
+    else if (strncmp(strCommand+idx,"pulse", 5) == 0)
+    {
+
+      // all pulse commands are at least 2 tokens 
+      //
+      if (tokenCount < 2)
+      {
+        // should be at least three tokens...
+        Serial.println("ERROR: unable to parse command.");
+        return;
+      }
+
+      idx = idxToken[1];    // second token
+
+      //  * pulse duration [X] - get/set the current value
+      if (strncmp(strCommand+idx,"duration",8) == 0)
+      {
+        if (tokenCount < 3)
+        {
+          // Get level value
+          Serial.print("pulse duration (us): ");
+          Serial.println(Pulse_Duration_us);
+          return;
+        }
+
+        // assume we are setting duration
+        //
+        idx = idxToken[2];
+
+        // try to parse the value
+        //  should work without null terminating the token...
+        //
+        lTmp = atol(strCommand+idx);
+        if (lTmp <= 0)
+        {
+          Serial.println("ERROR: unable to parse command.");
+          return;
+        }
+
+        // set the value
+        //
+        Pulse_Duration_us = lTmp;
+
+        return;
+
+      } // end of "pulse interval "
+      else if (strncmp(strCommand+idx,"interval",8) == 0)
+      {
+        if (tokenCount < 3)
+        {
+          // Get level value
+          Serial.print("pulse interval (ms): ");
+          Serial.println(Pulse_Interval_ms);
+          return;
+        }
+
+        // assume we are setting duration
+        //
+        idx = idxToken[2];
+
+        // try to parse the value
+        //  should work without null terminating the token...
+        //
+        lTmp = atol(strCommand+idx);
+        if (lTmp <= 0)
+        {
+          Serial.println("ERROR: unable to parse command.");
+          return;
+        }
+
+        // set the value
+        //
+        Pulse_Interval_ms = lTmp;
+
+        return;
+
+      } // end of "pulse duration "
+
+    } // end of pulse command logic
 
     //--------------------
     // logging commands

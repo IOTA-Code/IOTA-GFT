@@ -62,6 +62,7 @@ volatile OperatingMode DeviceMode;    // current operating mode
 unsigned long tBeginWait;
 bool fStarted;                        // set to true when we first enter TimeValid mode
 
+Cameras CameraType;                 // camera type
 
 volatile FlashingMode FlashMode;		// current flashing mode
 
@@ -78,10 +79,11 @@ bool fEventDefined  = false;	// true if event defined
 volatile unsigned short timer4_ov;    // timer 4 overflow count = high word of "time" (32ms)
 volatile unsigned short timer5_ov;    // timer 5 overflow count  
 
-byte OCR2Alevel = 159;  		  			// PWM frequency set; on Timer 2 with prescaler = 1, 99 makes 160kHz, 159 = 100kHz, 199 = 80kHz
+byte OCR2Alevel = 159;  		  			      // PWM frequency set; on Timer 2 with prescaler = 1, 99 makes 160kHz, 159 = 100kHz, 199 = 80kHz
 byte flashlevel = 100;                    // flash brightness level in percent (0 to 100)
 
-const unsigned long Timer3_us = 64;				// microseconds per led timer clock count (x1024 prescaler)
+uint16_t Timer3_us = 16;				          // microseconds per led timer clock count (x256 prescaler)
+uint16_t OCR3A_pulse = 5000/Timer3_us;    // default 5ms pulse duration for EXP mode
 
 //*************
 //  Time
@@ -133,6 +135,11 @@ volatile boolean LED_ON = false;      			// LED state
 
 volatile int PPS_Flash_Countdown_Sec;           // # of seconds remaining in a PPS flash
 
+                                            // EXP flash sequences are short pulses separated by D ms for a total duration of T seconds
+                                            //      sequence is enabled when pulse_final_ms is non-zero
+                                            //
+volatile unsigned long pulse_next_ms;       // time (millis) when we should enable the next EXP flash pulse
+volatile unsigned long pulse_final_ms;      // time of final EXP flash pulse in sequence / 0 => no flash sequence in progress
 
 //***********
 //  Button
@@ -161,6 +168,9 @@ char logNMEA[] = "TTTTTTTT ";         // just the prefix to the rest of the NMEA
 char logPPS[] = "TTTTTTTT P\r\n";
 #define len_logPPS 12
 
+char logEXP[] = "TTTTTTTT E\r\n";
+#define len_logEXP 12
+
 char logFlashON[] = "TTTTTTTT +\r\n";
 #define len_logFlashON 12
 
@@ -188,17 +198,8 @@ unsigned long errorLong;
 ISR(TIMER3_COMPA_vect)
 {
 
-  // turn OFF LED & decrement count
+  // turn OFF LED 
   //
-    // now turn off OC0B
-  TCCR0A = (1<< COM0B1);   // normal mode & CLEAR 0C0B on match
-  TCCR0B = (1<< FOC0B) | (1<< CS02) | (1<< CS01) | (1<< CS00);     // Force 0C0B low
-    // now setup for next incoming 1pps to SET 0C0B
-    //
-  TCCR0A = (1<< COM0B1) | (1<< COM0B0);   // normal mode & SET 0C0B on match
-
-
-//  digitalWrite(LED_PIN,false);
   bitClear(TCCR2A, COM2B1);         // disable PWM => turn OFF LED
   LED_ON = false;
 
@@ -686,16 +687,68 @@ ISR( TIMER5_OVF_vect)
 } // end of Timer5 overflow vector
 
 //=================================================================
-// ISR for Timer 5 input capture interrupt - capture external EVENT input 
+// ISR for Timer 5 input capture interrupt - capture EXP interrupt
 //==================================================================
 ISR( TIMER5_CAPT_vect)
 {
-  unsigned long cTime;
+  unsigned long tk_EXP;
+  unsigned long tk_LED;
+  unsigned long now_ms;
 
   // get current time and save it to the event buffer
   //
-  cTime = GetTicks(IC5);
+  tk_EXP = GetTicks(IC5);
 
+  // Is an EXP flash sequence currently active?
+  //
+  if ((FlashMode == EXP) && (pulse_final_ms > 0))
+  {
+    // a pulse sequence is active, is it time for a pulse?
+    //
+    now_ms = millis();
+    if (now_ms > pulse_final_ms)
+    {
+        // flash sequence is done!
+        //
+
+        pulse_final_ms = 0;  // => all done with this flash sequence
+        pulse_next_ms = 0;
+
+    }
+    else if ((now_ms > pulse_next_ms) && (!LED_ON))
+    {
+        // not done and it is time for a flash pulse
+        //
+
+        // turn on LED
+        //
+      bitSet(TCCR2A,COM2B1);                // enable PWM mode => turn on LED
+      tk_LED = GetTicks(CNT4);              // time LED turned ON
+      LED_ON = true;
+
+      // start flash timer
+      TCNT3 = 0;                              // start count at 0
+      OCR3A = OCR3A_pulse;                    // set duration   
+      TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
+      TIMSK3 |= (1 << OCIE3A);                // enable timer compare interrupt
+
+      // log time LED went ON
+      //
+      ultohexA(logFlashON,tk_LED);
+      LogTextWrite(logFlashON,len_logFlashON);
+
+      // set time for next pulse
+      //
+      pulse_next_ms += Pulse_Interval_ms;
+
+    }
+
+  }
+
+  // log the EXP time
+  //
+  ultohexA(logEXP,tk_EXP);
+  LogTextWrite(logEXP,len_logEXP);
   
 } // end of Timer5 input capture interrupt
 
@@ -928,6 +981,8 @@ void setup()
   //
   DeviceMode = InitMode;
   FlashMode = PPS;
+  pulse_final_ms = 0;     // no EXP sequence active
+  pulse_next_ms = 0;
 
   // set PIN modes
   //
@@ -979,7 +1034,8 @@ void setup()
   
   //  Timer 3 - for LED flash duration in EXP mode only
   //    CTC mode 4
-  //    prescaler OFF => timer OFF for now / but will be set to f/1024 for actual timing
+  //    prescaler OFF => timer OFF for now / but will be set to f/256 for actual timing
+  //                      f/256 => 64khz => us/16 = value for OCR3A register, 16us minimum, 1024ms maximum
   //    OCR3A set to desired duration
   //    PRR1 disabled to allow timer
   //
@@ -1130,17 +1186,44 @@ void loop()                     // run over and over again
           // else
           //   setup one duration
           //
-          if (LED_ON)
+          if (FlashMode == PPS)
           {
-            PPS_Flash_Countdown_Sec += PPS_Flash_Duration_Sec;
+            // PPS mode flashing (generic camera)
+            //
+            if (LED_ON)
+            {
+              PPS_Flash_Countdown_Sec += Flash_Duration_Sec;
+            }
+            else
+            {
+              PPS_Flash_Countdown_Sec = Flash_Duration_Sec;
+            }
           }
-          else
-          {
-            PPS_Flash_Countdown_Sec = PPS_Flash_Duration_Sec;
-          }
-        }
+
+          else if (FlashMode == EXP)
+          {            
+              // EXP mode flashing
+              //    are we already in a sequence or just starting one?
+              //
+              if (pulse_final_ms > 0)
+              {
+                  // already in a sequence, extend the time
+                  //
+                  pulse_final_ms += (Flash_Duration_Sec * 1000);
+              }
+              {
+                  // starting a new flash sequence
+                  //
+                now_ms = millis();
+                pulse_next_ms = now_ms;   // enable pulses
+                pulse_final_ms = now_ms + (Flash_Duration_Sec * 1000) + 50;    // set end time and enable flashing (allow a few ms for timing precision)
+              }
+
+          }  // end of flash mode check
+
+        } // end of button pressed section
       }
-    }
+    } // end of debounce check for button
     lastButtonState = buttonReading;    // save the current reading for next time in the loop
     
     // Startup tasks
