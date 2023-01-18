@@ -20,8 +20,9 @@ extern volatile uint16_t fifoTail;  // Only accessed by sd writer.
 // control variables
 //
 extern bool blnLogEnable;   // true => logging is enabled
-extern bool blnLogFile;     // true => file logging is enabled
-extern bool blnLogSerial;   // flase => serial port logging is enabled
+extern bool blnLogEXP;      // log EXP events
+extern bool blnLogToFile;   // true => file logging is enabled
+extern bool blnLogToSerial;   // flase => serial port logging is enabled
 
 // data block definition
 //
@@ -43,6 +44,9 @@ extern ExFatFile logFile;
 extern ExFatFile rootDir;    // root directory
 extern ExFatFile tmpFile;
 
+// line buffer
+#define MAXLINE 100
+extern char strLine[];
 
   //******************
   // function prototypes

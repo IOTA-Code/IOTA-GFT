@@ -197,6 +197,7 @@ unsigned long errorLong;
 //=========================================
 ISR(TIMER3_COMPA_vect)
 {
+  unsigned long tk_LED;
 
   // turn OFF LED 
   //
@@ -206,6 +207,12 @@ ISR(TIMER3_COMPA_vect)
   // turn OFF Timer 3
   //
   TCCR3B = (1 << WGM32);    // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
+
+  // log time flash went off
+  //
+  tk_LED = GetTicks(CNT4);              // time LED turned OFF
+  ultohexA(logFlashOFF,tk_LED);
+  LogTextWrite(logFlashOFF,len_logFlashOFF);
   
 } // end of LED_done_interrupt
 
@@ -694,6 +701,7 @@ ISR( TIMER5_CAPT_vect)
   unsigned long tk_EXP;
   unsigned long tk_LED;
   unsigned long now_ms;
+  bool blnLog;
 
   // get current time and save it to the event buffer
   //
@@ -701,6 +709,7 @@ ISR( TIMER5_CAPT_vect)
 
   // Is an EXP flash sequence currently active?
   //
+  blnLog = false;
   if ((FlashMode == EXP) && (pulse_final_ms > 0))
   {
     // a pulse sequence is active, is it time for a pulse?
@@ -726,29 +735,38 @@ ISR( TIMER5_CAPT_vect)
       tk_LED = GetTicks(CNT4);              // time LED turned ON
       LED_ON = true;
 
-      // start flash timer
+      // start flash timer = timer 3
+      TCCR3B = 0;                             // no source => clock stopped
       TCNT3 = 0;                              // start count at 0
+      TIFR3 = 0;                              // clear all pending ints
       OCR3A = OCR3A_pulse;                    // set duration   
       TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
       TIMSK3 |= (1 << OCIE3A);                // enable timer compare interrupt
 
       // log time LED went ON
       //
-      ultohexA(logFlashON,tk_LED);
-      LogTextWrite(logFlashON,len_logFlashON);
-
       // set time for next pulse
       //
       pulse_next_ms += Pulse_Interval_ms;
 
+      // log the flash start too...
+      //
+      blnLog = true;
     }
 
   }
 
-  // log the EXP time
+  // logging - EXP time and flash time
   //
   ultohexA(logEXP,tk_EXP);
   LogTextWrite(logEXP,len_logEXP);
+
+  if (blnLog)
+  {
+      ultohexA(logFlashON,tk_LED);
+      LogTextWrite(logFlashON,len_logFlashON);
+
+  }
   
 } // end of Timer5 input capture interrupt
 
@@ -1084,11 +1102,20 @@ void setup()
   TCNT5 = 0;        // timer5: reset count
   timer5_ov = 0;    // timer5: reser overflow count
   TIFR5 = 0;        // timer5: reset all pending interrupts
-//***
-//*** leave exp disabled for initial device testing, just enable overflow
-//  TIMSK5 = (1 << ICIE5) | (1 << TOIE5);   // timer 5: turn on IC capture and overflow interrupts
-  TIMSK5 = (1 << TOIE5);
 
+  if (blnLogEXP)
+  {
+    TIMSK5 = (1 << ICIE5) | (1 << TOIE5);   // timer 5: turn on IC capture and overflow interrupts
+  }
+  else
+  {
+    // if no EXP logging, disable this interrupt
+    //
+    TIMSK5 = (1 << TOIE5);       // turn on OVERFLOW interrupt only
+  }
+
+  // Timers begin...
+  //
   GTCCR = 0;    // RESTART prescaler and all synchronous timers
   
   //******************
@@ -1110,6 +1137,7 @@ void setup()
   {
     Serial.println("Error initialing SD card -> Fatal error!");
   }
+  Serial.println("SD Ready");
 
 } // end of setup
 

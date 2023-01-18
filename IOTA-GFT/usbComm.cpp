@@ -32,6 +32,7 @@
     * log file - list any log files
     * log file read filename
     * log file rm filename
+    * log file save - savef/flush current log file to SD
 
 */
 
@@ -538,12 +539,12 @@ void ReadCMD()
         // 3 parameters => assume we are trying to set the mode
         //
         idx = idxToken[2];
-        if (strncmp(strCommand+idx,"PPS",3) == 0)
+        if (strncmp(strCommand+idx,"pps",3) == 0)
         {
           FlashMode = PPS;
           return;
         }
-        else if (strncmp(strCommand+idx,"EXP",3) == 0)
+        else if (strncmp(strCommand+idx,"exp",3) == 0)
         {
           FlashMode = EXP;
           return;
@@ -701,6 +702,7 @@ void ReadCMD()
     //    log [on | off ] - enable disable data logging (default = ON)
     //    log serial [on | off] - enable/disable data logging to serial port (default = OFF)
     //    log file [on | off] - enable/disable data logging to sd card file (default = ON)
+    //    log file save - flush buffers to current log file
     //    log file list - list log files
     //    log file read filename - download (echo) log file "filename"
     //    log file rm filename - delete log file named "filename"
@@ -721,18 +723,25 @@ void ReadCMD()
 
       idx = idxToken[1];    // second token
 
+      // log on
       if (strncmp(strCommand+idx,"on",2) == 0)
       {
         // "log ON"
         blnLogEnable = true;    // turn ON logging
         return;
       }
+
+      // log off
       else if (strncmp(strCommand+idx,"off",3) == 0)
       {
         //  "log OFF"
+        //    & flush buffers!
         blnLogEnable = false;   // turn OFF logging
+        LogFlushAll();
         return;
       }
+
+      // log serial
       else if (strncmp(strCommand+idx,"serial",4) == 0)
       {
 
@@ -747,14 +756,15 @@ void ReadCMD()
         idx = idxToken[2];    // third token - should be ON or OFF
         if (strncmp(strCommand+idx,"on",2) == 0)
         {
-          // "log ON"
-          blnLogEnable = true;    // turn ON logging
+          // "log serial ON"
+          blnLogToSerial = true;    // turn ON logging
           return;
         }
         else if (strncmp(strCommand+idx,"off",3) == 0)
         {
-          //  "log OFF"
-          blnLogEnable = false;   // turn OFF logging
+          //  "log serial OFF"
+          //  
+          blnLogToSerial = false;   // turn OFF logging
           return;
         }
         else
@@ -765,6 +775,8 @@ void ReadCMD()
         }
 
       }
+      
+      // log file
       else if (strncmp(strCommand+idx,"file",4) == 0)
       {
         // "log file" command, now parse third token
@@ -777,7 +789,37 @@ void ReadCMD()
         }
         idx = idxToken[2];
 
-        if (strncmp(strCommand+idx,"list",4) == 0)
+        // log file on
+        if (strncmp(strCommand+idx,"on",2) == 0)
+        {
+          // turn on file loggin
+          //
+          blnLogToFile = true;
+          return;
+        }
+
+        // log file off
+        else if (strncmp(strCommand+idx,"off",3) == 0)
+        {
+          blnLogToFile = false;   // turn OFF logging to file
+          LogFlushAll();
+          return;
+        }
+
+        // log file save
+        else if (strncmp(strCommand+idx,"save",4) == 0)
+        {
+          // turn off logging during flush
+          //
+          blnTmp = blnLogToFile;
+          blnLogToFile = false;   // turn OFF logging to file
+          LogFlushAll();
+          blnLogToFile = blnTmp;      /// back to where it was...
+          return;
+        }
+
+        // log file list
+        else if (strncmp(strCommand+idx,"list",4) == 0)
         {        
           // "log file list" => list log files
           //
@@ -832,6 +874,7 @@ void ReadCMD()
 
         }  // list of log files
 
+        // log file read
         else if (strncmp(strCommand+idx,"read",4)==0)
         {
           //  "log file read" - download contents of log file
@@ -871,6 +914,7 @@ void ReadCMD()
         //
         else if (strncmp(strCommand+idx,"rm",2)==0)
         {
+          // **********TBD***************
 
           // logging must be disabled
           //

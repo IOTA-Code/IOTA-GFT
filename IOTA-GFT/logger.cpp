@@ -22,6 +22,7 @@
 #include <SdFat.h>
 #include <sdios.h>
 #include "gpsComm.h"
+#include "logger.h"
 
 //---------------------------------------
 //  GLOBALS
@@ -36,8 +37,9 @@ const uint8_t SD_CS_PIN = SS;
 // Misc
 //
 bool blnLogEnable = false;    // enable logging
-bool blnLogFile = true;       // log to file
-bool blnLogSerial = true;      // echo log to serial port?
+bool blnLogEXP = true;        // log EXP events
+bool blnLogToFile = true;       // log to file
+bool blnLogToSerial = true;      // echo log to serial port?
 
 //------------------------------------------------------------------------------
 // File definitions.
@@ -81,13 +83,6 @@ ExFatFile tmpFile;    // misc file pointer
 //
 const uint8_t FIFO_DIM = 6;   // # of blocks in FIFO
 
-// data block definition
-//
-struct block_t {
-  uint8_t overrun;      // non-zero => overrun while trying to add to this block's data
-  uint16_t count;       // # of bytes of data used in this block
-  uint8_t data[512];
-};
 const uint16_t BLOCK_SIZE = sizeof(block_t);
 
 block_t fifoBuffer[FIFO_DIM];      // allocate buffer space
@@ -128,7 +123,6 @@ struct data_t {
 
 // Line from file
 //
-#define MAXLINE 100
 char strLine[MAXLINE+1];
 
 
@@ -161,7 +155,7 @@ bool LogTextWrite(char *strIn, int iCount)
 {
   // is logging enabled?
   //
-  if (!blnLogEnable)
+  if (!blnLogEnable || !blnLogToFile)
   {
     return true;      // no error, just ignore the request
   }
@@ -531,7 +525,7 @@ bool EchoFile(char* fname)
     return(false);
   }
 
-  // Mark start of file with "[" on a line
+  // Mark start of file with "{" on a line
   //
   Serial.println("{");
 
