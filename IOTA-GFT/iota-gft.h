@@ -14,6 +14,7 @@
   //  VERSION
   //
   extern const char *strVersion;
+  extern const char *strDeviceName;
 
   //*****************************
   //  Operating Mode
@@ -32,6 +33,7 @@
     FatalError              // => Fatal error occurred
   };
   extern volatile OperatingMode DeviceMode;    // current operating mode
+  extern volatile bool blnReportMode;
 
   extern short int SYNC_SECONDS;                // # of seconds for syncing to GPS time
   extern volatile short int TimeSync;           // ( > 0 ) => we are syncing to GPS sentence times = # of seconds remaining for sync (small value so no problem with ints)

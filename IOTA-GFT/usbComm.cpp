@@ -80,6 +80,8 @@ int Flash_Duration_Sec = 5;       // duration of one LED "flash" in seconds
 int Pulse_Duration_us = 5000;         // duration of one shutter (EXP) pulse in EXP mode
 int Pulse_Interval_ms = 1000;         // interval between pulses
 
+char strDONE = "[DONE]\r\n";
+
 //===========================================================================================================
 //
 //   MISC FUNCTIONS
@@ -207,6 +209,7 @@ void FindTokens()
 // general commands
 //    echo on | off - enable/disable echo of the GPS NMEA data to the usb port.
 //    mode - get current device operating mode
+//    device - get device name
 //    version - get version info for this device
 //
 // camera commands
@@ -294,12 +297,14 @@ void ReadCMD()
   //
   if (Cmd_Next < 0)
   {
+
+
     // ECHO command string to USB port
     //
     
-    Serial.print("CMD <");
+    Serial.print("[CMD ");
     Serial.print(strCommand);
-    Serial.print(">\r\n");
+    Serial.print("]\r\n");
 
     // get ready for next command
     //
@@ -327,11 +332,24 @@ void ReadCMD()
 
     idx = idxToken[0];        // start of first token
 
+
+    //  * device - get device name
+    //
+    if (strncmp(strCommand+idx,"device", 6) == 0)
+    {
+      Serial.print("[");
+      Serial.print(strDeviceName);
+      Serial.println("]");
+      return;
+    }   // end of version command
+
     //  * version - get version info
     //
-    if (strncmp(strCommand+idx,"version", 7) == 0)
+    else if (strncmp(strCommand+idx,"version", 7) == 0)
     {
-      Serial.println(strVersion);
+      Serial.print("[");
+      Serial.print(strVersion);
+      Serial.println("]");
       return;
     }   // end of version command
 
@@ -339,25 +357,26 @@ void ReadCMD()
     //
     else if (strncmp(strCommand+idx,"mode", 4) == 0)
     {
-
+      Serial.print("[");
       switch(DeviceMode)
       {
         case InitMode :
-          Serial.println("InitMode");
+          Serial.print("InitMode");
           break;
         case WaitingForGPS :
-          Serial.println("WaitingForGPS");
+          Serial.print("WaitingForGPS");
           break;
         case TimeValid :
-          Serial.println("TimeValid");
+          Serial.print("TimeValid");
           break;
         case Syncing :
-          Serial.println("Syncing");
+          Serial.print("Syncing");
           break;
         case FatalError :
-          Serial.println("FatalError");
+          Serial.print("FatalError");
           break;
       }
+      Serial.println("]");      
       return;
 
     }   // end of mode command
@@ -369,7 +388,7 @@ void ReadCMD()
       if (tokenCount < 2)
       {
         // should be two tokens...
-        Serial.println("ERROR: unable to parse command.");
+        Serial.println("[ERROR: unable to parse command.]");
         return;
       }
       idx = idxToken[1];    // second token
@@ -378,6 +397,7 @@ void ReadCMD()
         // turn on echo of NMEA data
         //
         blnEchoNMEA = true;
+        Serial.println(strDONE);
         return;
       }
       else if (strncmp(strCommand+idx,"off",3) == 0)
@@ -385,13 +405,14 @@ void ReadCMD()
         // turn OFF echo
         //
         blnEchoNMEA = false;
+        Serial.println(strDONE);
         return;
       }
       else
       {
         // format error
         //
-        Serial.println("ERROR: unable to parse command.");
+        Serial.println("[ERROR: unable to parse command.]");
         return;
       }
     }   // end of echo command
@@ -405,18 +426,21 @@ void ReadCMD()
       if (tokenCount < 2)
       {
         // return current camera type
-       switch(CameraType)
+        //
+        Serial.print("[");
+        switch(CameraType)
         {
           case generic :
-            Serial.println("generic");
+            Serial.print("generic");
             break;
           case shutter :
-            Serial.println("shutter");
+            Serial.print("shutter");
             break;
           default:
-            Serial.println("unknown");
+            Serial.print("unknown");
             break;
         }
+        Serial.println("]");        
         return;
       }
     
@@ -426,17 +450,19 @@ void ReadCMD()
       {
         CameraType = generic;
         FlashMode = PPS;
+        Serial.println(strDONE);
         return;
       }
       else if (strncmp(strCommand+idx,"shutter",7) == 0)
       {
         CameraType = shutter;
         FlashMode = EXP;
+        Serial.println(strDONE);
         return;
       }
       else
       {
-        Serial.println("ERROR: unable to parse command.");
+        Serial.println("[ERROR: unable to parse command.]");
         return;
       }
 
@@ -458,7 +484,7 @@ void ReadCMD()
       if (tokenCount < 2)
       {
         // should be at least two tokens...
-        Serial.println("ERROR: unable to parse command.");
+        Serial.println("[ERROR: unable to parse command.]");
         return;
       }
 
@@ -471,6 +497,7 @@ void ReadCMD()
         // turn on flash now
         //
         PPS_Flash_Countdown_Sec = Flash_Duration_Sec;
+        Serial.println(strDONE);
         return;
       } // end of "flash now"
 
@@ -480,8 +507,9 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // Get duration value
-          Serial.print("flash duration: ");
-          Serial.println(Flash_Duration_Sec);
+          Serial.print("[flash duration: ");
+          Serial.print(Flash_Duration_Sec);
+          Serial.println("]");
           return;
         }
 
@@ -495,13 +523,14 @@ void ReadCMD()
         lTmp = atol(strCommand+idx);
         if (lTmp <= 0)
         {
-          Serial.println("ERROR: unable to parse command.");
+          Serial.println("[ERROR: unable to parse command.]");
           return;
         }
 
         // set the value
         //
         Flash_Duration_Sec = lTmp;
+        Serial.println(strDONE);
         return;
 
       } // end of "flash duration "
@@ -512,8 +541,9 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // Get level value
-          Serial.print("flash level: ");
-          Serial.println(flashlevel);
+          Serial.print("[flash level: ");
+          Serial.print(flashlevel);
+          Serial.println("]");
           return;
         }
 
@@ -527,18 +557,19 @@ void ReadCMD()
         lTmp = atol(strCommand+idx);
         if (lTmp <= 0)
         {
-          Serial.println("ERROR: unable to parse command.");
+          Serial.println("[ERROR: unable to parse command.]");
           return;
         }
         else if ((lTmp < 0) || (lTmp > 100))
         {
-          Serial.println("ERROR: flashlevel not in range (0,100).");
+          Serial.println("[ERROR: flashlevel not in range (0,100).]");
         }
 
         // set the value
         //
         flashlevel = lTmp;
         OCR2B = map(flashlevel, 0, 100, 0, OCR2Alevel);  		// adjust value in OCR2B register for PWM
+        Serial.println(strDONE);
 
         return;
 
@@ -552,17 +583,17 @@ void ReadCMD()
           // Get duration value
           if (FlashMode == PPS)
           {
-            Serial.println("PPS flash mode.");
+            Serial.println("[PPS flash mode.]");
             return;
           }
           else if (FlashMode == EXP)
           {
-            Serial.println("EXP flash mode.");
+            Serial.println("[EXP flash mode.]");
             return;
           }
           else
           {
-            Serial.println("ERROR: Unknown flash mode!");
+            Serial.println("[ERROR: Unknown flash mode!]");
             return;
           }
           return;
@@ -574,16 +605,18 @@ void ReadCMD()
         if (strncmp(strCommand+idx,"pps",3) == 0)
         {
           FlashMode = PPS;
+          Serial.println(strDONE);
           return;
         }
         else if (strncmp(strCommand+idx,"exp",3) == 0)
         {
           FlashMode = EXP;
+          Serial.println(strDONE);
           return;
         }
         else
         {
-          Serial.println("ERROR: unable to parse command.");
+          Serial.println("[ERROR: unable to parse command.]");
           return;
         }
 
@@ -602,15 +635,15 @@ void ReadCMD()
           char strTime[20] = "YYYY-MM-DD HH:MM:SS";
           int duration = Flash_Duration_Sec;
 
-          Serial.println("Flash Times:");
+          Serial.println("[Flash Times:");
           for( int i = 0; i < FT_Count; i++)
           {
-            sprintf(strTime,"%04d-%02d-%02d %02d-%02d-%02d [%04d (sec)]",
+            sprintf(strTime,"%04d-%02d-%02d %02d:%02d:%02d <%04d (sec)>",
                     FlashTimes[i].yyyy,FlashTimes[i].mon,FlashTimes[i].day,
                     FlashTimes[i].hh,FlashTimes[i].mm,FlashTimes[i].ss,duration);
             Serial.println(strTime);
           }
-          Serial.println();
+          Serial.println("]");
           return;
         }
 
@@ -622,6 +655,7 @@ void ReadCMD()
         if (strncmp(strCommand+idx,"clear",5)==0)
         {
           FT_Count = 0;
+          Serial.println(strDONE);
           return;
         }
 
@@ -637,7 +671,7 @@ void ReadCMD()
 
       else
       {
-        Serial.println("ERROR: unknown command.");
+        Serial.println("[ERROR: unknown command.]");
         return;
       }
 
@@ -657,7 +691,7 @@ void ReadCMD()
       if (tokenCount < 2)
       {
         // should be at least three tokens...
-        Serial.println("ERROR: unable to parse command.");
+        Serial.println("[ERROR: unable to parse command.]");
         return;
       }
 
@@ -669,8 +703,9 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // Get level value
-          Serial.print("pulse duration (us): ");
-          Serial.println(Pulse_Duration_us);
+          Serial.print("[pulse duration (us): ");
+          Serial.print(Pulse_Duration_us);
+          Serial.println("]");
           return;
         }
 
@@ -684,13 +719,14 @@ void ReadCMD()
         lTmp = atol(strCommand+idx);
         if (lTmp <= 0)
         {
-          Serial.println("ERROR: unable to parse command.");
+          Serial.println("[ERROR: unable to parse command.]");
           return;
         }
 
         // set the value
         //
         Pulse_Duration_us = lTmp;
+        Serial.println(strDONE);
 
         return;
 
@@ -700,8 +736,9 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // Get level value
-          Serial.print("pulse interval (ms): ");
-          Serial.println(Pulse_Interval_ms);
+          Serial.print("[pulse interval (ms): ");
+          Serial.print(Pulse_Interval_ms);
+          Serial.println("]");
           return;
         }
 
@@ -715,13 +752,14 @@ void ReadCMD()
         lTmp = atol(strCommand+idx);
         if (lTmp <= 0)
         {
-          Serial.println("ERROR: unable to parse command.");
+          Serial.println("[ERROR: unable to parse command.]");
           return;
         }
 
         // set the value
         //
         Pulse_Interval_ms = lTmp;
+        Serial.println(strDONE);
 
         return;
 
@@ -749,7 +787,7 @@ void ReadCMD()
       if (tokenCount < 2)
       {
         // should be at least two tokens...
-        Serial.println("ERROR: unable to parse command.");
+        Serial.println("[ERROR: unable to parse command.]");
         return;
       }
 
@@ -760,6 +798,7 @@ void ReadCMD()
       {
         // "log ON"
         blnLogEnable = true;    // turn ON logging
+        Serial.println(strDONE);
         return;
       }
 
@@ -771,6 +810,8 @@ void ReadCMD()
         blnLogEnable = false;   // turn OFF logging
         LogFlushAll();          // flush out pending data
         LogFlushToFile();       // update file on SD
+        Serial.println(strDONE);
+
         return;
       }
 
@@ -783,7 +824,7 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // should be at least three tokens...
-          Serial.println("ERROR: unable to parse command.");
+          Serial.println("[ERROR: unable to parse command.]");
           return;
         }
         idx = idxToken[2];    // third token - should be ON or OFF
@@ -791,6 +832,7 @@ void ReadCMD()
         {
           // "log serial ON"
           blnLogToSerial = true;    // turn ON logging
+          Serial.println(strDONE);
           return;
         }
         else if (strncmp(strCommand+idx,"off",3) == 0)
@@ -798,12 +840,13 @@ void ReadCMD()
           //  "log serial OFF"
           //  
           blnLogToSerial = false;   // turn OFF logging
+          Serial.println(strDONE);
           return;
         }
         else
         {
           // unknown...
-          Serial.println("ERROR: unable to parse command.");
+          Serial.println("[ERROR: unable to parse command.]");
           return;
         }
 
@@ -817,7 +860,7 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // should be at least three tokens...
-          Serial.println("ERROR: unable to parse command.");
+          Serial.println("[ERROR: unable to parse command.]");
           return;
         }
         idx = idxToken[2];
@@ -825,6 +868,28 @@ void ReadCMD()
         // log file on
         if (strncmp(strCommand+idx,"on",2) == 0)
         {
+          // is SD available?
+          //
+          if (!bln_SD_OK)
+          {
+            // we want to log to the SD card
+            //
+            Serial.println("[Intializing SD card for logging...]");
+            if (LogInit())
+            {
+              bln_SD_OK = true;
+            }
+            else
+            {
+              // cannot initialize the SD card
+              //   turn off file logging
+              //
+              Serial.println("[ERROR initialing SD card]");
+              blnLogToFile = false;
+              bln_SD_OK = false;
+              return;
+            }
+          }
           // if no log file now, open it
           //
           if (!blnFileOpen)
@@ -832,11 +897,14 @@ void ReadCMD()
             if (!LogFileOpen())
             {
               Serial.println("[ERROR opening log file]");
+              blnLogToFile = false;
+              return;
             }
           }          
           // turn on file logging
           //
           blnLogToFile = true;
+          Serial.println(strDONE);
           return;
         }
 
@@ -846,6 +914,7 @@ void ReadCMD()
           blnLogToFile = false;   // turn OFF logging to file
           LogFlushAll();          // flush out pending data
           LogFlushToFile();       // update file on SD
+          Serial.println(strDONE);
           return;
         }
 
@@ -859,6 +928,7 @@ void ReadCMD()
           LogFlushAll();          // flush out pending data
           LogFlushToFile();       // update file on SD
           blnLogToFile = blnTmp;      /// back to where it was...
+          Serial.println(strDONE);
           return;
         }
 
@@ -869,7 +939,7 @@ void ReadCMD()
           //
           // walk through file list and output names for any *.log files
           //
-          Serial.println("Log files:");
+          Serial.println("[Log files:");
 
           rootDir.rewind();   // start at beginning of dir
 
@@ -881,7 +951,7 @@ void ReadCMD()
 
             if (rootDir.getError())
             {
-              Serial.println("ERROR: failed listing files in directory.");
+              Serial.println("[ERROR: failed listing files in directory.]]");
               return;
             }
 
@@ -913,7 +983,7 @@ void ReadCMD()
             tmpFile.close();
 
           } // end of loop through files in root dir
-          Serial.println();
+          Serial.println("]");
           return;
 
         }  // list of log files
@@ -928,7 +998,7 @@ void ReadCMD()
           //
           if (idx < 4)
           {
-            Serial.println("ERROR: no filename for log file read command.");
+            Serial.println("[ERROR no filename for log file read command.]");
             return;
           }
           
@@ -936,7 +1006,7 @@ void ReadCMD()
           //
           if (blnLogEnable)
           {
-            Serial.println("ERROR: disable logging before file read.");
+            Serial.println("[ERROR disable logging before file read.]");
             return;
           }
 
@@ -947,7 +1017,7 @@ void ReadCMD()
           strTmp[lenToken[3]] = 0;    // null terminate filename
           if (!EchoFile(strTmp))
           {
-            Serial.println("ERROR: error reading log file.");
+            Serial.println("[ERROR reading log file.]");
             return;
           }
           return;
@@ -967,7 +1037,7 @@ void ReadCMD()
           //
           if (idx < 4)
           {
-            Serial.println("no filename for log file rm command.");
+            Serial.println("[ERROR no filename for log file rm command.]");
             return;
           }
 
@@ -977,13 +1047,13 @@ void ReadCMD()
           return;
         } // end of log file rm command
 
-        Serial.println("unknown command");
+        Serial.println("[ERROR unknown command]");
         return;
 
       } // end of parse token after "log" 
       else
       {
-        Serial.println("ERROR: unable to parse command.");
+        Serial.println("[ERROR unable to parse command.]");
         return;
       }
 
@@ -991,7 +1061,7 @@ void ReadCMD()
 
     else
     {
-      Serial.println("unknown command.");
+      Serial.println("[ERROR unknown command.]");
       return;
     } // end of command options
 

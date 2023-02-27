@@ -38,7 +38,7 @@ struct ubxPUBX04 gpsPUBX04;
 
 uint8_t nmeaTime[10] = "{TTTTTTTT ";    // string version of NMEA time
 uint8_t nmeaSentence[NMEA_MAX+1];     // current NMEA sentence
-uint8_t nmeaEnd[3] = "}\n";           // end of NMEA in log
+uint8_t nmeaEnd[4] = "}\r\n";           // end of NMEA in log
 int nmeaCount = -1;                   // position of next char in NMEA sentence = # of chars in current sentence, 0 => no current sentence
   
 #define MAX_FIELDS 17         // GGA has 17 fields (including the terminating CRLF)
@@ -804,7 +804,7 @@ bool ReadGPS()
         //
         LogTextWrite(nmeaTime,10);
         LogTextWrite(nmeaSentence,nmeaCount-1);
-        LogTextWrite(nmeaEnd,2);
+        LogTextWrite(nmeaEnd,3);
 
         // call the parser
         //
@@ -828,6 +828,10 @@ bool ReadGPS()
         else if (resultParse == NMEA_PUBX04)
         {
           tk_PUBX04 = tk_NMEAStart;     // save start time
+
+          // turn on mode report
+          //
+          blnReportMode = true;
 
           // update current or default GPS-UTC offset value
           //

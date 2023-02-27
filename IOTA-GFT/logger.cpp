@@ -37,11 +37,11 @@ const uint8_t SD_CS_PIN = SS;
 
 // Misc
 //
-bool blnLogEnable = false;    // enable logging
-bool blnLogEXP = true;        // log EXP events
-bool blnLogToFile = false;       // log to file
-bool blnLogToSerial = true;      // echo log to serial port
-
+bool blnLogEnable = false;        // enable logging
+bool blnLogEXP = true;            // log EXP events
+bool blnLogToFile = false;        // log to file
+bool blnLogToSerial = true;       // echo log to serial port
+bool bln_SD_OK = false;           // Is SD card avaiable?
 //------------------------------------------------------------------------------
 // File definitions.
 //

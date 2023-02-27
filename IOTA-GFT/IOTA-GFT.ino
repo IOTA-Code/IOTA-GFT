@@ -60,9 +60,12 @@ int LED_PIN = 9;            // PIN for LED output
 
 //  VERSION
 //
+const char *strDeviceName = "EventTimer";
 const char *strVersion = "v1.00";
 
 volatile OperatingMode DeviceMode;    // current operating mode
+volatile bool blnReportMode;          // true => report current mode in log (enabled with each NMEA set)
+
 unsigned long tBeginWait;
 bool fStarted;                        // set to true when we first enter TimeValid mode
 
@@ -183,6 +186,21 @@ char logFlashOFF[] = "{TTTTTTTT -}\r\n";
 #define len_logFlashOFF 14
 #define offset_logFlashOFF 1
 
+char logModeInit[] = "[MODE Init]\r\n";
+#define len_logModeInit 13
+
+char logModeWaitingForGPS[] = "[MODE WaitingForGPS]\r\n";
+#define len_logModeWaitingForGPS 22
+
+char logModeSync[] = "[MODE Sync]\r\n";
+#define len_logModeSync 13
+
+char logModeTimeValid[] = "[MODE TimeValid]\r\n";
+#define len_logModeTimeValid 18
+
+char logModeFatal[] = "[MODE Fatal xxxx]\r\n";
+#define len_logModeFatal 18
+
 unsigned long LastFlush = 0;            // millis() time of last flush
 
 //***********
@@ -247,7 +265,8 @@ ISR( TIMER4_CAPT_vect)
   bool blnIntervalError;
 
   unsigned long tk_LED;       // LED time in ticks
-
+  bool blnLogFlashON = false;
+  bool blnLogFlashOFF = false;
  
   //*****************
   //  If init mode or FatalError, just leave...
@@ -280,7 +299,7 @@ ISR( TIMER4_CAPT_vect)
       // LOG time LED went OFF
       //
       ultohexA(logFlashOFF + offset_logFlashOFF,tk_LED);
-      LogTextWrite(logFlashOFF,len_logFlashOFF);
+      blnLogFlashOFF = true;
 
     }
   }
@@ -300,7 +319,7 @@ ISR( TIMER4_CAPT_vect)
       // log time LED went ON
       //
       ultohexA(logFlashON + offset_logFlashON,tk_LED);
-      LogTextWrite(logFlashON,len_logFlashON);
+      blnLogFlashON = true;
 
     }
 
@@ -397,6 +416,20 @@ ISR( TIMER4_CAPT_vect)
   //
   ultohexA(logPPS + offset_logPPS,tk_PPS);
   LogTextWrite(logPPS,len_logPPS);
+
+
+  // check to see if we should log the time of flash ON or OFF
+  //
+  if (blnLogFlashON)
+  {
+    LogTextWrite(logFlashON,len_logFlashON);
+    blnLogFlashON = false;
+  }
+  if (blnLogFlashOFF)
+  {
+    LogTextWrite(logFlashOFF,len_logFlashOFF);
+    blnLogFlashOFF = false;
+  }
 
 
   //********************************
@@ -1032,7 +1065,7 @@ void setup()
   retVal = gpsCommInit();
   if (!gpsCommInit())
   {
-    Serial.print("[ERROR Fatal error initializing GPS.]");
+    Serial.print("[FATAL error initializing GPS.]");
   }
  
 
@@ -1133,23 +1166,15 @@ void setup()
   DeviceMode = WaitingForGPS;
   tBeginWait = millis();
 
-  fStarted = false;   // startup logic will happen later after we have GPS lock
+  fStarted = false;       // startup logic will happen later after we have GPS lock
+  blnLogEnable = true;
+  blnReportMode = false;
 
   //*****************
   //  clear pending data from the serial input
   //
   ClearSerialInput();
   
-  //******************
-  //  Initialize SD card for logging
-  //
-  Serial.println("[Intializing SD card for logging...]");
-  if (!LogInit())
-  {
-    Serial.println("[ERROR initialing SD card]");
-    while(1);   // hang here...
-  }
-  Serial.println("[SD Ready]");
 
 } // end of setup
 
@@ -1268,26 +1293,46 @@ void loop()                     // run over and over again
     
     // Startup tasks
     //    Do these after first entering TimeValid mode
+    //    if logging to a file, start up the SD card and open the file using the current date/time
     //
     if (!fStarted)
     {
     
       //******************
-      //   open log file now
-      //******************
+      //  Initialize SD card for logging
+      //
+      bln_SD_OK = false;
       if (blnLogToFile)
       {
-        Serial.println("[Opening log file on SD card...]");
-        if (!LogFileOpen())
+        // we want to log to the SD card
+        //
+        Serial.println("[Intializing SD card for logging...]");
+        if (LogInit())
         {
-          Serial.println("[ERROR opening log file]");
+          bln_SD_OK = true;
+          Serial.println("[SD Ready]");
+
+          //   open log file now
+          //   if file open fails, turn OFF file logging
+          //
+          Serial.println("[Opening log file on SD card...]");
+          if (!LogFileOpen())
+          {
+            blnLogToFile = false;
+            Serial.println("[ERROR opening log file]");
+          }
+        }
+        else
+        {
+          // cannot initialize the SD card
+          //   turn off file logging
+          //
+          Serial.println("[ERROR initialing SD card]");
+          blnLogToFile = false;
+          bln_SD_OK = false;
         }
       }
     
-      //*****************
-      //  Now start ...
-      //
-      blnLogEnable = true;
       Serial.println("[Status:Ready]");
 
       //  we have completed startup, set the flag
@@ -1304,58 +1349,49 @@ void loop()                     // run over and over again
   //
   ReadGPS();
 
-  //******************************************************
-  // Output logging info
-  //  But... not if the LED is ON while logging to the SD card.  In theory the current drain of the SD card
-  //  might dim the LED.
+  
+  //***************************
+  //  report current operating mode?
   //
-  if (!LED_ON | !blnLogToFile)
+  if (blnReportMode)
+  {
+      if (DeviceMode == TimeValid)
+      {
+        LogTextWrite(logModeTimeValid,len_logModeTimeValid);
+      }
+      else if (DeviceMode == Syncing)
+      {
+        LogTextWrite(logModeSync,len_logModeSync);
+      }
+      else if (DeviceMode == WaitingForGPS)
+      {
+        LogTextWrite(logModeWaitingForGPS,len_logModeWaitingForGPS);
+      }
+      else if (DeviceMode == FatalError)
+      {
+        LogTextWrite(logModeFatal,len_logModeFatal);
+      }
+      else if (DeviceMode == InitMode)
+      {
+        LogTextWrite(logModeInit,len_logModeInit);
+      }
+      blnReportMode = false;      // turn OFF until next NMEA set
+  }
+
+  //******************************************************
+  // Logging update?
+  //
+  if (blnLogEnable)
   {
     now_ms = millis();
     LogFlushAll();         // flush logging buffer
 
     // in PPS mode, update disk every second...
     //
-    if ((now_ms - LastFlush) > 2000)
+    if ((now_ms - LastFlush) > 1000)
     {
       LastFlush = now_ms;
       LogFlushToFile();       // make sure SD file is valid
-
-/* debug ...
-      if (DeviceMode == TimeValid)
-      {
-        Serial.print("DeviceMode = TimeValid : ");
-        Serial.println(sec_ss);
-        
-      }
-      else if (DeviceMode == Syncing)
-      {
-        Serial.println("DeviceMode == Syncing");
-      }
-      else if (DeviceMode == WaitingForGPS)
-      {
-        Serial.println("DeviceMode == WaitingForGPS");
-        if (gpsRMC.valid) Serial.println("gpsRMC.valid");
-        if (gpsPUBX04.valid) Serial.println("gpsPUBX04.valid");
-        Serial.print("tk_pps = ");
-        Serial.print(logPPS);
-
-      }
-      else if (DeviceMode == FatalError)
-      {
-        Serial.println("DeviceMode == FatalError");
-      }
-      else if (DeviceMode == InitMode)
-      {
-        Serial.println("DeviceMode == InitMode");
-      }
-      else
-      {
-        Serial.println("unknown mode!");
-      }
-
-  end of debug */
-
     } // end of check for flush to file
 
   }

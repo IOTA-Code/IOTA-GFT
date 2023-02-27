@@ -23,6 +23,7 @@ extern bool blnLogEnable;   // true => logging is enabled
 extern bool blnLogEXP;      // log EXP events
 extern bool blnLogToFile;   // true => file logging is enabled
 extern bool blnLogToSerial;   // flase => serial port logging is enabled
+extern bool bln_SD_OK;
 
 extern bool blnFileOpen;
 
