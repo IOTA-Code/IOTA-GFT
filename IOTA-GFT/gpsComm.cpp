@@ -36,8 +36,9 @@ struct ubxPUBX04 gpsPUBX04;
 
 #define NMEA_MAX  201    // max length of a nmea sentence
 
-uint8_t nmeaTime[9] = "TTTTTTTT ";    // string version of NMEA time
+uint8_t nmeaTime[10] = "{TTTTTTTT ";    // string version of NMEA time
 uint8_t nmeaSentence[NMEA_MAX+1];     // current NMEA sentence
+uint8_t nmeaEnd[3] = "}\n";           // end of NMEA in log
 int nmeaCount = -1;                   // position of next char in NMEA sentence = # of chars in current sentence, 0 => no current sentence
   
 #define MAX_FIELDS 17         // GGA has 17 fields (including the terminating CRLF)
@@ -735,7 +736,7 @@ bool ReadGPS()
 
       // save the time at the start of the string
       //
-      ultohexA(nmeaTime,tk_NMEAStart);
+      ultohexA(nmeaTime+1,tk_NMEAStart);
   
       // save the current hh:mm:ss time
       //
@@ -793,17 +794,17 @@ bool ReadGPS()
       //
       if (c == '\n')
       {
-        nmeaSentence[nmeaCount] = 0;      // null terminate the sentence
-
-        // IF LED is NOT ON
-        //    log this sentence
-        //  skipping the NMEA LOG during LED flash to avoid filling the SD write buffer
+        // terminate the sentence with zero
         //
-        if (!LED_ON)
-        {
-          LogTextWrite(nmeaTime,9);
-          LogTextWrite(nmeaSentence,nmeaCount);
-        }
+        nmeaSentence[nmeaCount] = 0;
+
+        // log this sentence to buffer 
+        //   NOTE: interrupts are enabled so this sentence could be "interrupted"
+        //          by a PPS or EXP log event
+        //
+        LogTextWrite(nmeaTime,10);
+        LogTextWrite(nmeaSentence,nmeaCount-1);
+        LogTextWrite(nmeaEnd,2);
 
         // call the parser
         //
@@ -942,8 +943,9 @@ bool gpsCommInit()
   retVal = ubxInit();
   if (retVal > 0)
   {
-    Serial.print("ERROR initializing GPS module : ");
-    Serial.println(retVal,HEX);
+    Serial.print("[ERROR initializing GPS module : ");
+    Serial.print(retVal,HEX);
+    Serial.println("]");
     return( false );
   }
 

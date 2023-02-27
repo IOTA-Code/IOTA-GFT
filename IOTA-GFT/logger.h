@@ -24,6 +24,8 @@ extern bool blnLogEXP;      // log EXP events
 extern bool blnLogToFile;   // true => file logging is enabled
 extern bool blnLogToSerial;   // flase => serial port logging is enabled
 
+extern bool blnFileOpen;
+
 // data block definition
 //
 extern const uint8_t FIFO_DIM;   // # of blocks in FIFO

@@ -20,7 +20,7 @@ extern int Pulse_Interval_ms;               // time between pulses
   //   usbComm function prototypes
   //****************
 extern void ReadCMD();
-
+extern void ClearSerialInput();
 
 #endif // end of block containing entire include file
 

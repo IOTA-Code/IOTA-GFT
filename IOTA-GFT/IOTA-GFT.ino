@@ -58,6 +58,10 @@ int LED_PIN = 9;            // PIN for LED output
 //  GLOBAL variables and definitions
 //=======================================
 
+//  VERSION
+//
+const char *strVersion = "v1.00";
+
 volatile OperatingMode DeviceMode;    // current operating mode
 unsigned long tBeginWait;
 bool fStarted;                        // set to true when we first enter TimeValid mode
@@ -160,22 +164,24 @@ int FT_Count = 0;                       // # of flash times in array
 
 
 //********
-//  Logging outputs
+//  serial outputs
 //
-char logNMEA[] = "TTTTTTTT ";         // just the prefix to the rest of the NMEA string
-#define len_logNMEA 9
 
-char logPPS[] = "TTTTTTTT P\r\n";
-#define len_logPPS 12
+char logPPS[] = "{TTTTTTTT P}\r\n";
+#define len_logPPS 14
+#define offset_logPPS 1
 
-char logEXP[] = "TTTTTTTT E\r\n";
-#define len_logEXP 12
+char logEXP[] = "{TTTTTTTT E}\r\n";
+#define len_logEXP 14
+#define offset_logEXP 1
 
-char logFlashON[] = "TTTTTTTT +\r\n";
-#define len_logFlashON 12
+char logFlashON[] = "{TTTTTTTT +}\r\n";
+#define len_logFlashON 14
+#define offset_logFlashON 1
 
-char logFlashOFF[] = "TTTTTTTT -\r\n";
-#define len_logFlashOFF 12
+char logFlashOFF[] = "{TTTTTTTT -}\r\n";
+#define len_logFlashOFF 14
+#define offset_logFlashOFF 1
 
 unsigned long LastFlush = 0;            // millis() time of last flush
 
@@ -211,7 +217,7 @@ ISR(TIMER3_COMPA_vect)
   // log time flash went off
   //
   tk_LED = GetTicks(CNT4);              // time LED turned OFF
-  ultohexA(logFlashOFF,tk_LED);
+  ultohexA(logFlashOFF + offset_logFlashOFF,tk_LED);
   LogTextWrite(logFlashOFF,len_logFlashOFF);
   
 } // end of LED_done_interrupt
@@ -273,7 +279,7 @@ ISR( TIMER4_CAPT_vect)
 
       // LOG time LED went OFF
       //
-      ultohexA(logFlashOFF,tk_LED);
+      ultohexA(logFlashOFF + offset_logFlashOFF,tk_LED);
       LogTextWrite(logFlashOFF,len_logFlashOFF);
 
     }
@@ -293,7 +299,7 @@ ISR( TIMER4_CAPT_vect)
 
       // log time LED went ON
       //
-      ultohexA(logFlashON,tk_LED);
+      ultohexA(logFlashON + offset_logFlashON,tk_LED);
       LogTextWrite(logFlashON,len_logFlashON);
 
     }
@@ -389,7 +395,7 @@ ISR( TIMER4_CAPT_vect)
 
   // log the PPS time
   //
-  ultohexA(logPPS,tk_PPS);
+  ultohexA(logPPS + offset_logPPS,tk_PPS);
   LogTextWrite(logPPS,len_logPPS);
 
 
@@ -758,12 +764,12 @@ ISR( TIMER5_CAPT_vect)
 
   // logging - EXP time and flash time
   //
-  ultohexA(logEXP,tk_EXP);
+  ultohexA(logEXP + offset_logEXP,tk_EXP);
   LogTextWrite(logEXP,len_logEXP);
 
   if (blnLog)
   {
-      ultohexA(logFlashON,tk_LED);
+      ultohexA(logFlashON + offset_logFlashON,tk_LED);
       LogTextWrite(logFlashON,len_logFlashON);
 
   }
@@ -778,7 +784,7 @@ ISR( TIMER5_CAPT_vect)
 //++++++++++++++++++++++++++++++++++++++++++++++++++
 
 //===========================================================================
-// ultohexA - convert unsigned long to 8 hex ASCII characters in a character array
+// ultohexA - convert unsigned long to 8 hex ASCII characters
 //
 //===========================================================================
 uint8_t hexA[16] = {0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x41,0x42,0x43,0x44,0x45,0x46};
@@ -809,7 +815,7 @@ void ultohexA(uint8_t *dest, unsigned long ul)
 } // end of ultohex
 
 //===========================================================================
-// ustohex - convert unsigned short to 4 hex MAX7456 characters in a character array
+// ustohex - convert unsigned short to 4 hex ASCII characters
 //
 //===========================================================================
 void ustohexA(uint8_t *dest, unsigned short us)
@@ -1014,7 +1020,7 @@ void setup()
   //
   //
   Serial.begin(115200);
-  Serial.println("STARTING!");
+  Serial.println("[STARTING!]");
 
   // 9600 NMEA is the default rate for the GPS
   //
@@ -1026,7 +1032,7 @@ void setup()
   retVal = gpsCommInit();
   if (!gpsCommInit())
   {
-    Serial.print("Fatal error initializing GPS.");
+    Serial.print("[ERROR Fatal error initializing GPS.]");
   }
  
 
@@ -1119,7 +1125,7 @@ void setup()
   GTCCR = 0;    // RESTART prescaler and all synchronous timers
   
   //******************
-  //  Waiting for GPS
+  //  Waiting for GPS mode
   //  - Wait for PPS interrupts AND NMEA data valid 
   //  - ReadGPS will parse the NMEA data and set valid status for NMEA data
   //  - after NMEA data valid, next PPS ISR will change the device mode to "Syncing" 
@@ -1129,15 +1135,21 @@ void setup()
 
   fStarted = false;   // startup logic will happen later after we have GPS lock
 
+  //*****************
+  //  clear pending data from the serial input
+  //
+  ClearSerialInput();
+  
   //******************
   //  Initialize SD card for logging
   //
-  Serial.println("Intializing SD card for logging...");
+  Serial.println("[Intializing SD card for logging...]");
   if (!LogInit())
   {
-    Serial.println("Error initialing SD card -> Fatal error!");
+    Serial.println("[ERROR initialing SD card]");
+    while(1);   // hang here...
   }
-  Serial.println("SD Ready");
+  Serial.println("[SD Ready]");
 
 } // end of setup
 
@@ -1205,7 +1217,7 @@ void loop()                     // run over and over again
         {
  
           // debug...
-          Serial.println("BUTTON PRESSED!");
+          Serial.println("[BUTTON PRESSED!]");
 
           // button PRESSED!
           //  start flashing at next PPS
@@ -1255,6 +1267,7 @@ void loop()                     // run over and over again
     lastButtonState = buttonReading;    // save the current reading for next time in the loop
     
     // Startup tasks
+    //    Do these after first entering TimeValid mode
     //
     if (!fStarted)
     {
@@ -1262,17 +1275,20 @@ void loop()                     // run over and over again
       //******************
       //   open log file now
       //******************
-      Serial.println("Opening log file on SD card...");
-      if (!LogFileOpen())
+      if (blnLogToFile)
       {
-        Serial.println("Error opening log file: Fatal error!");
+        Serial.println("[Opening log file on SD card...]");
+        if (!LogFileOpen())
+        {
+          Serial.println("[ERROR opening log file]");
+        }
       }
     
       //*****************
       //  Now start ...
       //
       blnLogEnable = true;
-      Serial.println("Status:Ready");
+      Serial.println("[Status:Ready]");
 
       //  we have completed startup, set the flag
       //
@@ -1290,20 +1306,20 @@ void loop()                     // run over and over again
 
   //******************************************************
   // Output logging info
-  //  But... not if the LED is ON.  In theory the current drain of the SD card
+  //  But... not if the LED is ON while logging to the SD card.  In theory the current drain of the SD card
   //  might dim the LED.
   //
-  if (!LED_ON)
+  if (!LED_ON | !blnLogToFile)
   {
     now_ms = millis();
-    LogFlushFull();         // flush any full buffers to the file...
+    LogFlushAll();         // flush logging buffer
 
     // in PPS mode, update disk every second...
     //
     if ((now_ms - LastFlush) > 2000)
     {
       LastFlush = now_ms;
-      LogFlushToFile();       // update the file with the current data
+      LogFlushToFile();       // make sure SD file is valid
 
 /* debug ...
       if (DeviceMode == TimeValid)

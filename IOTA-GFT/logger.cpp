@@ -5,7 +5,7 @@
   
   * Open file on SD card for logging
   * write text or data into logging buffer
-  * output buffer contents
+  * output buffer contents to file and/or Serial (USB)
   
   NOTES:
 		* Dedicated_SPI mode
@@ -23,6 +23,7 @@
 #include <sdios.h>
 #include "gpsComm.h"
 #include "logger.h"
+#include "iota-gft.h"
 
 //---------------------------------------
 //  GLOBALS
@@ -38,8 +39,8 @@ const uint8_t SD_CS_PIN = SS;
 //
 bool blnLogEnable = false;    // enable logging
 bool blnLogEXP = true;        // log EXP events
-bool blnLogToFile = true;       // log to file
-bool blnLogToSerial = true;      // echo log to serial port?
+bool blnLogToFile = false;       // log to file
+bool blnLogToSerial = true;      // echo log to serial port
 
 //------------------------------------------------------------------------------
 // File definitions.
@@ -125,6 +126,9 @@ struct data_t {
 //
 char strLine[MAXLINE+1];
 
+// crc value
+char strCRC[12]={'[','C','R','C',' ',0,0,0,0,']',0};
+int offset_CRC = 5;
 
 //=========================================================
 //
@@ -141,6 +145,41 @@ void errorHalt(char *strMessage)
   while(1);             // hang!
 }
 
+//------------------------------------------
+// crc_update_string - add zero terminated string data to running CRC value
+//  INPUTS:
+//    crc_current = current CRC value
+//    strInput = byte array to include in CRC
+//  RETURN:
+//    returns updated CRC value
+//------------------------------------------
+uint16_t crc_update_string( uint16_t crc_current, uint8_t *strInput)
+{
+  uint8_t cInput;
+
+  // init
+  //
+  uint8_t sum1 = (uint8_t) crc_current;
+  uint8_t sum2 = (uint8_t) (crc_current >> 8);
+
+  // walk though string until null value
+  //
+  while( *strInput != 0)
+  {
+    // update CRC sums
+    //
+    sum1 = (sum1 + *strInput) % 255;
+    sum2 = (sum2 + sum1) % 255;
+    // next character
+    strInput++;
+  }
+
+  // done
+  //
+  return (sum2 << 8) | sum1;
+
+} // update CRC value
+
 //---------------------------------------------
 // LogTextWrite - write text string into logging fifo
 // 
@@ -155,7 +194,7 @@ bool LogTextWrite(char *strIn, int iCount)
 {
   // is logging enabled?
   //
-  if (!blnLogEnable || !blnLogToFile)
+  if (!blnLogEnable || (!blnLogToFile && !blnLogToSerial))
   {
     return true;      // no error, just ignore the request
   }
@@ -221,7 +260,6 @@ bool LogFlushFull()
   uint32_t m;
   block_t* pBlock;
 
-
   //************
   //  if full block available, write it to the SD card
   //
@@ -236,25 +274,41 @@ bool LogFlushFull()
     // fifoCount > 1 => we have a full block ready
     //
     pBlock = &fifoBuffer[fifoTail];
-    
-    // make sure we have room in the file
+
+    // write the log buffer data to SD card and/or Serial
     //
-    if (logFile.curPosition() >= MAX_FILE_SIZE) {
-      // File full => report error and stop
-      errorHalt("Error: Log file full! - halting.");
+
+    if (blnLogToFile)
+    {
+      // writing log buffer to file on SD card ...
+      //
+
+      // make sure we have room in the file
+      //
+      if (logFile.curPosition() >= MAX_FILE_SIZE) {
+        // File full => report error and stop
+        Serial.println("[ERROR Log file full!]");
+      }
+
+      // Write tail block data to SD.
+      //
+      m = micros();
+      if (logFile.write(pBlock->data, 512) != 512) {
+        Serial.println("[ERROR write data failed]");
+      }
+      m = micros() - m;
+      if (m > maxLatencyUsec) {
+        maxLatencyUsec = m;
+      }
+
+    } // end of writing to file
+ 
+    if (blnLogToSerial)
+    {
+      // writing log buffer to serial port
+      Serial.write(pBlock->data, 512);
     }
 
-    // Write tail block data to SD.
-    //
-    m = micros();
-    if (logFile.write(pBlock->data, 512) != 512) {
-      errorHalt("write data failed");
-    }
-    m = micros() - m;
-    if (m > maxLatencyUsec) {
-      maxLatencyUsec = m;
-    }
- 
     bytesWritten += 512;
 
     // Initialize empty block & reset tail pointer
@@ -276,6 +330,7 @@ bool LogFlushFull()
 //---------------------------------------------
 //  LogFlushAll - flush ALL pending FIFO data
 //    NOTE: only call this routine AFTER stopping all writes into the FIFO buffer
+//          (i.e. turn OFF logging)
 //
 //---------------------------------------------
 bool LogFlushAll()
@@ -291,36 +346,59 @@ bool LogFlushAll()
   if (curBlock->count > 0)
   {
     
+    if (blnLogToFile)
+    {
+      // writing log buffer to file on SD card ...
+      //
+
+      // make sure we have room in the file
+      //
+      if (logFile.curPosition() >= MAX_FILE_SIZE) {
+        // File full => report error and stop
+        Serial.println("[ERROR: Log file full!]");
+      }
+
+      m = micros();
+      if (logFile.write(curBlock->data, curBlock->count) != curBlock->count) {
+        Serial.println("[ERROR write data failed]");
+      }
+      m = micros() - m;
+      if (m > maxLatencyUsec) {
+        maxLatencyUsec = m;
+      }
+
+    } // end of writing to file
+ 
+    if (blnLogToSerial)
+    {
+      // writing log buffer to serial port
+      Serial.write(curBlock->data, curBlock->count);
+    }
     // write out data from this partial block
     //
-    m = micros();
-    if (logFile.write(curBlock->data, curBlock->count) != curBlock->count) {
-      errorHalt("write data failed");
-    }
-    m = micros() - m;
-    if (m > maxLatencyUsec) {
-      maxLatencyUsec = m;
-    }
    
     bytesWritten += curBlock->count;
     curBlock->count = 0;                // head block now empty
   }
-  
-  // flush the output to the SD card file.
-  //
-  logFile.flush();
 
   return(true);
 
 } // end of LogFlushAll
 
 //---------------------------------------------
-//  LogFlushToFile - flush pending data to file
+//  LogFlushToFile - flush pending data to SD file
 //
 //---------------------------------------------
 void LogFlushToFile()
 {
-  
+
+  // ignore if not logging to SD file
+  //
+  if (!blnLogToFile)
+  {
+    return;
+  }
+
   // flush the SD output buffer to the SD card file.
   //
   logFile.flush();
@@ -340,7 +418,7 @@ bool LogInit()
   // initialize sdFat
   //
   if (!sd.begin(SD_CONFIG)) {
-    Serial.println("Error initializing SD!");
+    Serial.println("[ERROR initializing SD!]");
     return(false);
   }
 
@@ -349,7 +427,7 @@ bool LogInit()
   //
   if (!rootDir.open("/"))
   {
-    Serial.println("root dir.open failed");
+    Serial.println("[ERROR root dir.open failed]");
     return(false);
   }
 
@@ -406,9 +484,9 @@ bool LogFileOpen()
   if (blnFileOpen)
   {
     logFile.close();
-    Serial.print("Closed current logfile <");
+    Serial.print("[Closed current logfile <");
     Serial.print(fileName);
-    Serial.println(">");
+    Serial.println(">]");
     blnFileOpen = false;
   }
 
@@ -435,28 +513,29 @@ bool LogFileOpen()
   blnLogExists = sd.exists(fileName);
   if (blnLogExists)
   {
-    Serial.print(F("Removing existing logfile..."));
+    Serial.print(F("[Removing existing logfile...]"));
     sd.remove(fileName);
   }
 
   //******************
   //  create a new log file
   //
-  Serial.print("Opening log file on SD card: ");
-  Serial.println(fileName);
+  Serial.print("[Opening log file on SD card: <");
+  Serial.print(fileName);
+  Serial.println(">]");
   if (!logFile.open(fileName, O_RDWR | O_CREAT)) {
-    Serial.println("open file failed");
+    Serial.println("[ERROR open file failed]");
     return(false);   // dont start!
   }
 
 // skip pre-allocate for now...
 //
 #if 0  
-  Serial.print("Allocating: ");
+  Serial.print("[Allocating: ");
   Serial.print(MAX_FILE_SIZE_MiB);
-  Serial.println(" MiB");
+  Serial.println(" MiB]");
   if (!logFile.preAllocate(MAX_FILE_SIZE)) {
-    Serial.println("preAllocate failed");
+    Serial.println("[ERROR preAllocate failed]");
     return(false);   // don't start!
   }
 #endif
@@ -469,7 +548,7 @@ bool LogFileOpen()
   {
     if (!logFile.timestamp(T_ACCESS|T_CREATE|T_WRITE, yr, mon, day, hh, mm, ss))
     {
-      Serial.println("File timestamp failed");
+      Serial.println("[ERROR File timestamp failed]");
       return(false);   // don't start!
     }
   } // end of setting time of file
@@ -506,14 +585,15 @@ bool LogFileOpen()
 bool EchoFile(char* fname)
 {
   int retval;
+  uint16_t crc_val = 0;
 
   // verify the file exists
   //
   if (!sd.exists(fname))
   {
-    Serial.print("file <");
+    Serial.print("[ERROR file <");
     Serial.print(fname);
-    Serial.println("> does not exist.");
+    Serial.println("> does not exist.]");
     return(false);
   }
 
@@ -521,7 +601,7 @@ bool EchoFile(char* fname)
   //
   if (!tmpFile.open(fname,O_RDONLY))
   {
-    Serial.println("Error opening file.");
+    Serial.println("[ERROR opening file.]");
     return(false);
   }
 
@@ -538,9 +618,15 @@ bool EchoFile(char* fname)
     strLine[retval-1] = '\r';
     strLine[retval] = '\n';
     strLine[retval+1] = 0;
+
     // output the line
     //
     Serial.print(strLine);
+
+    // update the CRC value
+    //
+    crc_val = crc_update_string(crc_val,(uint8_t *)strLine);
+
   }
   if (retval < 0)
   {
@@ -550,6 +636,12 @@ bool EchoFile(char* fname)
   // mark end of file
   //
   Serial.println("}");
+
+  // now output the crc_value
+  //   [XXXX]
+  //
+  ustohexA(strCRC+offset_CRC,crc_val);
+  Serial.println(strCRC);
 
   // done
   //

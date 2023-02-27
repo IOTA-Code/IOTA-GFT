@@ -86,6 +86,29 @@ int Pulse_Interval_ms = 1000;         // interval between pulses
 //
 //===========================================================================================================
 
+//--------------------------------------------------------------------------------------
+//  ClearInputBuffer - read/clear pending data from serial port
+//    Note: this code causes a delay of at least 100ms
+//--------------------------------------------------------------------------------------
+void ClearSerialInput()
+{
+
+  byte bIn;
+
+  // dumb but should work to clear random data pending from the PC
+  //
+  for (int i = 0; i < 10; i++)
+  {
+    while ( Serial.available() > 0 )
+    {
+      bIn = Serial.read();
+
+    } //end of reading pending data
+
+    delay(10);
+  }
+
+} // end of ClearSerialInput
 
 //--------------------------------------------------------------------------------------
 //  FindTokens - find non-space tokens in null terminated command string
@@ -184,6 +207,7 @@ void FindTokens()
 // general commands
 //    echo on | off - enable/disable echo of the GPS NMEA data to the usb port.
 //    mode - get current device operating mode
+//    version - get version info for this device
 //
 // camera commands
 //    camera [generic, shutter ] - get/set camera type
@@ -303,9 +327,17 @@ void ReadCMD()
 
     idx = idxToken[0];        // start of first token
 
+    //  * version - get version info
+    //
+    if (strncmp(strCommand+idx,"version", 7) == 0)
+    {
+      Serial.println(strVersion);
+      return;
+    }   // end of version command
+
     //  * mode - get current operating mode
     //
-    if (strncmp(strCommand+idx,"mode", 4) == 0)
+    else if (strncmp(strCommand+idx,"mode", 4) == 0)
     {
 
       switch(DeviceMode)
@@ -332,7 +364,7 @@ void ReadCMD()
 
     //  * echo ON | OFF - enable/disable echo of the GPS NMEA data to the usb port.
     //
-    if (strncmp(strCommand+idx,"echo", 4) == 0)
+    else if (strncmp(strCommand+idx,"echo", 4) == 0)
     {
       if (tokenCount < 2)
       {
@@ -737,7 +769,8 @@ void ReadCMD()
         //  "log OFF"
         //    & flush buffers!
         blnLogEnable = false;   // turn OFF logging
-        LogFlushAll();
+        LogFlushAll();          // flush out pending data
+        LogFlushToFile();       // update file on SD
         return;
       }
 
@@ -792,7 +825,16 @@ void ReadCMD()
         // log file on
         if (strncmp(strCommand+idx,"on",2) == 0)
         {
-          // turn on file loggin
+          // if no log file now, open it
+          //
+          if (!blnFileOpen)
+          {
+            if (!LogFileOpen())
+            {
+              Serial.println("[ERROR opening log file]");
+            }
+          }          
+          // turn on file logging
           //
           blnLogToFile = true;
           return;
@@ -802,7 +844,8 @@ void ReadCMD()
         else if (strncmp(strCommand+idx,"off",3) == 0)
         {
           blnLogToFile = false;   // turn OFF logging to file
-          LogFlushAll();
+          LogFlushAll();          // flush out pending data
+          LogFlushToFile();       // update file on SD
           return;
         }
 
@@ -813,7 +856,8 @@ void ReadCMD()
           //
           blnTmp = blnLogToFile;
           blnLogToFile = false;   // turn OFF logging to file
-          LogFlushAll();
+          LogFlushAll();          // flush out pending data
+          LogFlushToFile();       // update file on SD
           blnLogToFile = blnTmp;      /// back to where it was...
           return;
         }
