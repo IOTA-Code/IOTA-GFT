@@ -80,7 +80,7 @@ int Flash_Duration_Sec = 5;       // duration of one LED "flash" in seconds
 int Pulse_Duration_us = 5000;         // duration of one shutter (EXP) pulse in EXP mode
 int Pulse_Interval_ms = 1000;         // interval between pulses
 
-char strDONE = "[DONE]\r\n";
+char strDONE[] = "[DONE]";
 
 //===========================================================================================================
 //
@@ -211,6 +211,7 @@ void FindTokens()
 //    mode - get current device operating mode
 //    device - get device name
 //    version - get version info for this device
+//    null - ignore this command string if it includes the word "null" - useful for clearing the input buffer
 //
 // camera commands
 //    camera [generic, shutter ] - get/set camera type
@@ -298,17 +299,24 @@ void ReadCMD()
   if (Cmd_Next < 0)
   {
 
-
-    // ECHO command string to USB port
-    //
-    
-    Serial.print("[CMD ");
-    Serial.print(strCommand);
-    Serial.print("]\r\n");
-
     // get ready for next command
     //
     Cmd_Next = 0;
+
+    // first check to see if this is a "null" command
+    //
+    if (strstr(strCommand,"null") >0 )
+    {
+      // command does contain "null", ignore this command string
+      //
+      return;
+    }
+
+    // ECHO command string to USB port
+    //    
+    Serial.print("[CMD ");
+    Serial.print(strCommand);
+    Serial.print("]\r\n");
 
     // finds tokens in the command line
     //
@@ -496,8 +504,8 @@ void ReadCMD()
       {
         // turn on flash now
         //
-        PPS_Flash_Countdown_Sec = Flash_Duration_Sec;
         Serial.println(strDONE);
+        PPS_Flash_Countdown_Sec = Flash_Duration_Sec;
         return;
       } // end of "flash now"
 

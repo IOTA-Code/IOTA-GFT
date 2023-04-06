@@ -803,7 +803,7 @@ bool ReadGPS()
         //          by a PPS or EXP log event
         //
         LogTextWrite(nmeaTime,10);
-        LogTextWrite(nmeaSentence,nmeaCount-1);
+        LogTextWrite(nmeaSentence,nmeaCount-2);
         LogTextWrite(nmeaEnd,3);
 
         // call the parser

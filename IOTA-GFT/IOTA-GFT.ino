@@ -186,19 +186,19 @@ char logFlashOFF[] = "{TTTTTTTT -}\r\n";
 #define len_logFlashOFF 14
 #define offset_logFlashOFF 1
 
-char logModeInit[] = "[MODE Init]\r\n";
+char logModeInit[] = "{MODE Init}\r\n";
 #define len_logModeInit 13
 
-char logModeWaitingForGPS[] = "[MODE WaitingForGPS]\r\n";
+char logModeWaitingForGPS[] = "{MODE WaitingForGPS}\r\n";
 #define len_logModeWaitingForGPS 22
 
-char logModeSync[] = "[MODE Sync]\r\n";
+char logModeSync[] = "{MODE Sync}\r\n";
 #define len_logModeSync 13
 
-char logModeTimeValid[] = "[MODE TimeValid]\r\n";
+char logModeTimeValid[] = "{MODE TimeValid}\r\n";
 #define len_logModeTimeValid 18
 
-char logModeFatal[] = "[MODE Fatal xxxx]\r\n";
+char logModeFatal[] = "{MODE Fatal xxxx}\r\n";
 #define len_logModeFatal 18
 
 unsigned long LastFlush = 0;            // millis() time of last flush
@@ -1332,8 +1332,6 @@ void loop()                     // run over and over again
           bln_SD_OK = false;
         }
       }
-    
-      Serial.println("[Status:Ready]");
 
       //  we have completed startup, set the flag
       //
