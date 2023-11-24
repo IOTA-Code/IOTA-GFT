@@ -12,15 +12,15 @@
     * Camera [generic, shutter] - get/set the camera type 
 
     * Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
-    * Flash Duration [X] - get/set the current flash duration 
+    * Flash Duration [X] - get/set the current flash duration (seconds in PPS mode or pulses in EXP mode)
     * Flash Level [X] - get/set the current flashlevel = percent flash PWM (0 - 100)
     * Flash Now - execute a flash sequence now
     * Flash Time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
     * Flash Time Clear - clear all flash times
     * Flash Time  - list all flash times
  
-    * Pulse Duration [X] - get/set the flash pulse duration (us)
-    * Pulse Interval [X] - get/set the flash pulse interval (ms)
+    * Pulse Duration [X] - get/set the flash pulse duration (us) for EXP mode
+    * Pulse Interval [X] - get/set the flash pulse interval (ms) for EXP mode
 
   Event file operations with set/get settings for future occultation event observations.  The event file specifies the timeframe for timing flashes associated with a future event.
   The event file commands to download the current event file from the device or upload a new event file to the device.
@@ -77,9 +77,7 @@ int tokenCount;                       // # of tokens in string
 
   // Flash settings
 int Flash_Duration_Sec = 5;       // duration of one LED "flash" in seconds
-int Pulse_Duration_us = 5000;         // duration of one shutter (EXP) pulse in EXP mode
-int Pulse_Interval_ms = 1000;         // interval between pulses
-
+int Pulse_Count = 5;              // # of pulses in EXP sequence
 char strDONE[] = "[DONE]";
 
 //===========================================================================================================
@@ -218,7 +216,7 @@ void FindTokens()
 //
 // flash commands
 //    flash now
-//    flash duration X - X is seconds in PPS mode
+//    flash duration X - X is seconds in PPS mode on number of pulses in EXP mode
 //    flash level X - X is the percent PWM flash level ( 0 - 100 )
 //    flash mode [pps | exp ] - get/set the current flash mode (PPS or EXP)
 //    flash time  - list current flash times
@@ -537,7 +535,18 @@ void ReadCMD()
 
         // set the value
         //
-        Flash_Duration_Sec = lTmp;
+        if (FlashMode == PPS)
+        {
+          Flash_Duration_Sec = lTmp;          
+        }
+        else if (FlashMode == EXP)
+        {
+          Pulse_Count = lTmp;          
+        }
+        else
+        {
+          Serial.println("[ERROR: unknown flash mode.]");
+        }
         Serial.println(strDONE);
         return;
 
@@ -712,7 +721,7 @@ void ReadCMD()
         {
           // Get level value
           Serial.print("[pulse duration (us): ");
-          Serial.print(Pulse_Duration_us);
+          Serial.print(pulse_duration_us);
           Serial.println("]");
           return;
         }
@@ -733,7 +742,8 @@ void ReadCMD()
 
         // set the value
         //
-        Pulse_Duration_us = lTmp;
+        pulse_duration_us = lTmp;
+        OCR3A_pulse = lTmp/Timer3_us;       // set timer3 duration to pulse duration
         Serial.println(strDONE);
 
         return;
@@ -745,12 +755,12 @@ void ReadCMD()
         {
           // Get level value
           Serial.print("[pulse interval (ms): ");
-          Serial.print(Pulse_Interval_ms);
+          Serial.print(pulse_interval_ms);
           Serial.println("]");
           return;
         }
 
-        // assume we are setting duration
+        // assume we are setting interval
         //
         idx = idxToken[2];
 
@@ -766,7 +776,7 @@ void ReadCMD()
 
         // set the value
         //
-        Pulse_Interval_ms = lTmp;
+        pulse_interval_ms = lTmp;
         Serial.println(strDONE);
 
         return;

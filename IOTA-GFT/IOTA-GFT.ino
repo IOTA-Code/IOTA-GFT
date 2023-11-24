@@ -142,11 +142,13 @@ volatile boolean LED_ON = false;      			// LED state
 
 volatile int PPS_Flash_Countdown_Sec;           // # of seconds remaining in a PPS flash
 
-                                            // EXP flash sequences are short pulses separated by D ms for a total duration of T seconds
-                                            //      sequence is enabled when pulse_final_ms is non-zero
+                                            // EXP flash sequences are short pulses separated by D ms for a total count of X pulses
+                                            //      sequence is enabled when pulse_count is non-zero
                                             //
+int pulse_duration_us = 5000;               // duration of one shutter (EXP) pulse in EXP mode
+volatile int pulse_interval_ms = 1000;      // interval between pulses
 volatile unsigned long pulse_next_ms;       // time (millis) when we should enable the next EXP flash pulse
-volatile unsigned long pulse_final_ms;      // time of final EXP flash pulse in sequence / 0 => no flash sequence in progress
+volatile uint16_t pulse_countdown;          // # of pulses left in sequence, 0 => no flash sequence in progress
 
 //***********
 //  Button
@@ -185,6 +187,10 @@ char logFlashON[] = "{TTTTTTTT +}\r\n";
 char logFlashOFF[] = "{TTTTTTTT -}\r\n";
 #define len_logFlashOFF 14
 #define offset_logFlashOFF 1
+
+char logFlashFINAL[] = "{TTTTTTTT !}\r\n";    // end of final flash pulse in sequence
+#define len_logFlashFINAL 14
+#define offset_logFlashFINAL 1
 
 char logModeInit[] = "{MODE Init}\r\n";
 #define len_logModeInit 13
@@ -235,8 +241,17 @@ ISR(TIMER3_COMPA_vect)
   // log time flash went off
   //
   tk_LED = GetTicks(CNT4);              // time LED turned OFF
-  ultohexA(logFlashOFF + offset_logFlashOFF,tk_LED);
-  LogTextWrite(logFlashOFF,len_logFlashOFF);
+
+  if (pulse_countdown == 0)
+  {
+    ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
+    LogTextWrite(logFlashFINAL,len_logFlashFINAL);
+  }
+  else
+  {
+    ultohexA(logFlashOFF + offset_logFlashOFF,tk_LED);
+    LogTextWrite(logFlashOFF,len_logFlashOFF);
+  }
   
 } // end of LED_done_interrupt
 
@@ -298,7 +313,7 @@ ISR( TIMER4_CAPT_vect)
 
       // LOG time LED went OFF
       //
-      ultohexA(logFlashOFF + offset_logFlashOFF,tk_LED);
+      ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
       blnLogFlashOFF = true;
 
     }
@@ -427,7 +442,7 @@ ISR( TIMER4_CAPT_vect)
   }
   if (blnLogFlashOFF)
   {
-    LogTextWrite(logFlashOFF,len_logFlashOFF);
+    LogTextWrite(logFlashFINAL,len_logFlashFINAL);
     blnLogFlashOFF = false;
   }
 
@@ -740,7 +755,7 @@ ISR( TIMER5_CAPT_vect)
   unsigned long tk_EXP;
   unsigned long tk_LED;
   unsigned long now_ms;
-  bool blnLog;
+  bool blnLogFlash;
 
   // get current time and save it to the event buffer
   //
@@ -748,22 +763,13 @@ ISR( TIMER5_CAPT_vect)
 
   // Is an EXP flash sequence currently active?
   //
-  blnLog = false;
-  if ((FlashMode == EXP) && (pulse_final_ms > 0))
+  blnLogFlash = false;
+  if ((FlashMode == EXP) && (pulse_countdown > 0))
   {
     // a pulse sequence is active, is it time for a pulse?
     //
     now_ms = millis();
-    if (now_ms > pulse_final_ms)
-    {
-        // flash sequence is done!
-        //
-
-        pulse_final_ms = 0;  // => all done with this flash sequence
-        pulse_next_ms = 0;
-
-    }
-    else if ((now_ms > pulse_next_ms) && (!LED_ON))
+    if ((now_ms >= pulse_next_ms) && (!LED_ON))
     {
         // not done and it is time for a flash pulse
         //
@@ -781,26 +787,28 @@ ISR( TIMER5_CAPT_vect)
       OCR3A = OCR3A_pulse;                    // set duration   
       TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
       TIMSK3 |= (1 << OCIE3A);                // enable timer compare interrupt
-
-      // log time LED went ON
-      //
+      
       // set time for next pulse
       //
-      pulse_next_ms += Pulse_Interval_ms;
+      pulse_next_ms += pulse_interval_ms;
+
+      // decrement pulse count
+      //
+      pulse_countdown--;
 
       // log the flash start too...
       //
-      blnLog = true;
+      blnLogFlash = true;
     }
 
   }
 
-  // logging - EXP time and flash time
+  // logging - EXP time and (optional) flash time
   //
   ultohexA(logEXP + offset_logEXP,tk_EXP);
   LogTextWrite(logEXP,len_logEXP);
 
-  if (blnLog)
+  if (blnLogFlash)
   {
       ultohexA(logFlashON + offset_logFlashON,tk_LED);
       LogTextWrite(logFlashON,len_logFlashON);
@@ -1038,7 +1046,7 @@ void setup()
   //
   DeviceMode = InitMode;
   FlashMode = PPS;
-  pulse_final_ms = 0;     // no EXP sequence active
+  pulse_countdown = 0;     // no EXP sequence active
   pulse_next_ms = 0;
 
   // set PIN modes
@@ -1072,7 +1080,7 @@ void setup()
   //**********************
   //  Init timers
   //	  Timer 2 - PWM for LED
-  //    Timer 3 - LED flash duration
+  //    Timer 3 - LED pulse duration
   //    Timer 4 - 1pps logging
   //    Timer 5 - exposure marker logging
   //  
@@ -1270,18 +1278,18 @@ void loop()                     // run over and over again
               // EXP mode flashing
               //    are we already in a sequence or just starting one?
               //
-              if (pulse_final_ms > 0)
+              if (pulse_countdown > 0)
               {
                   // already in a sequence, extend the time
                   //
-                  pulse_final_ms += (Flash_Duration_Sec * 1000);
+                  pulse_countdown += Pulse_Count;
               }
               {
                   // starting a new flash sequence
                   //
                 now_ms = millis();
                 pulse_next_ms = now_ms;   // enable pulses
-                pulse_final_ms = now_ms + (Flash_Duration_Sec * 1000) + 50;    // set end time and enable flashing (allow a few ms for timing precision)
+                pulse_countdown = Pulse_Count;
               }
 
           }  // end of flash mode check

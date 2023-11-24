@@ -12,9 +12,7 @@
 
   // PPS mode settings
 extern int Flash_Duration_Sec;              // duration of one LED "flash" in seconds
-extern int Pulse_Duration_us;               // duration of one shutter pulse (microseconds)
-extern int Pulse_Interval_ms;               // time between pulses
-
+extern int Pulse_Count;
 
   //****************
   //   usbComm function prototypes

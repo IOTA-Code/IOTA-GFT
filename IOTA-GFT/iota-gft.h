@@ -86,6 +86,7 @@
   //
   extern byte flashlevel;
   extern byte OCR2Alevel;
+  extern uint16_t Timer3_us;
   extern uint16_t OCR3A_pulse;
 
   //******************
@@ -110,6 +111,10 @@
   extern volatile unsigned long tk_pps_interval_total;         // sum of pps intervals
   extern volatile unsigned long tk_pps_interval_count;         // # of pps interval
   extern volatile unsigned long tk_pps_interval_ave;           // average pps interval
+
+  extern int pulse_duration_us;                         // duration of one shutter pulse (microseconds)
+  extern volatile int pulse_interval_ms;                // time between pulses (miliseconds)
+  extern volatile uint16_t pulse_count;                 // # of pulses
 
 
   extern volatile bool time_UTC;                  // true => time is currently UTC , false => time is currently GPS
