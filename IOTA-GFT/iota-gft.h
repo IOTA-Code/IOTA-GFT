@@ -55,15 +55,6 @@
 
   };
 
-  //****************************************
-  //  Camera Type - determines flashing strategy
-  // 
-  enum Cameras
-  {
-    generic,        // no information from the camera
-    shutter         //  camera sends out an exposure start (shutter) signal
-  };
-  extern Cameras CameraType;
 
   //****************************************
   // Flashing Modes
@@ -113,7 +104,7 @@
   extern volatile unsigned long tk_pps_interval_ave;           // average pps interval
 
   extern int pulse_duration_us;                         // duration of one shutter pulse (microseconds)
-  extern volatile int pulse_interval_ms;                // time between pulses (miliseconds)
+  extern volatile int pulse_interval;                   // time between pulses (miliseconds)
   extern volatile uint16_t pulse_count;                 // # of pulses
 
 

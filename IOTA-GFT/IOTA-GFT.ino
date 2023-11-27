@@ -4,7 +4,6 @@
 //  NOTES: 
 //  *** ASSUMES NEO-6 GPS module
 //  *** ASSUMES MEGA2560 R3 Arduino
-//  *** ASSUMES SD card 
 //   
 //
 //====================================================================== 
@@ -24,21 +23,13 @@
 //  LED
 //   Connect LED positive to Digital pin 9
 //
-//  BUTTON
-//   Connect one push button input to GND.
-//   Connect second push button input to pin 6.
 // 
-//  SD card 
-//    MISO - pin 50
-//    MOSI - pin 51
-//    SCLK - pin 52
-//    CS   - pin 53
+
 //
 
 //=======================================
 //  INCLUDES
 //=======================================
-#include <SdFat.h>
 #include "iota-gft.h"
 #include "ublox.h"
 #include "gpsComm.h"
@@ -48,7 +39,6 @@
 //==========================================
 // PIN definitions
 //===========================================
-int BUTTON_PIN = 6;         // Input from Button.  internal Pull up.  button press => low
 int PPS_PIN = 49;           // PPS signal input from GPS
 int EXP_PIN = 48;           // EXP signal input from camera
 int LED_PIN = 9;            // PIN for LED output
@@ -60,7 +50,7 @@ int LED_PIN = 9;            // PIN for LED output
 
 //  VERSION
 //
-const char *strDeviceName = "EventTimer";
+const char *strDeviceName = "OpenGFT";
 const char *strVersion = "v1.00";
 
 volatile OperatingMode DeviceMode;    // current operating mode
@@ -69,7 +59,6 @@ volatile bool blnReportMode;          // true => report current mode in log (ena
 unsigned long tBeginWait;
 bool fStarted;                        // set to true when we first enter TimeValid mode
 
-Cameras CameraType;                 // camera type
 
 volatile FlashingMode FlashMode;		// current flashing mode
 
@@ -133,7 +122,7 @@ volatile boolean pps_flash = false;           // true IFF LED was flashed with t
 
 //****************************
 // Flash variables
-//    There are two flashing modes: PPS and EXP.  In both cases, the LED is driven by a 160khz PWM cycle.
+//    There are two flashing modes: PPS and EXP.  In both cases, the LED is driven by a PWM cycle.
 //    PPS mode => Flashes are single LED On/Off sequences (via enabing/disabling PWM) where both the start and stop are closely aligned with a PPS signal.
 //    EXP mode => Flashes are a series of short duration LED On/Off pulses
 //    
@@ -142,30 +131,20 @@ volatile boolean LED_ON = false;      			// LED state
 
 volatile int PPS_Flash_Countdown_Sec;           // # of seconds remaining in a PPS flash
 
-                                            // EXP flash sequences are short pulses separated by D ms for a total count of X pulses
+                                            // EXP flash sequences are short pulses separated by D EXP intervals for a total count of X pulses
                                             //      sequence is enabled when pulse_count is non-zero
                                             //
 int pulse_duration_us = 5000;               // duration of one shutter (EXP) pulse in EXP mode
-volatile int pulse_interval_ms = 1000;      // interval between pulses
-volatile unsigned long pulse_next_ms;       // time (millis) when we should enable the next EXP flash pulse
-volatile uint16_t pulse_countdown;          // # of pulses left in sequence, 0 => no flash sequence in progress
+volatile int pulse_interval = 5;            // number of EXP events between pulses
+volatile uint16_t pulse_countdown;          // # of pulses left in sequence, 0 => no EXP flash sequence in progress
+volatile uint16_t pulse_interval_countdown; // # of EXP events until next pulse, 0=> flash (pulse) on next EXP event
 
-//***********
-//  Button
-//
-byte buttonState;                                 // current reading
-byte lastButtonState = HIGH;
-unsigned long debounceDuration = 100; 				    // millis
-unsigned long lastTimeButtonStateChanged = 0;
 
 
 //*********
 //  INPUTS
 //
-volatile bool blnEchoNMEA = false;
-
-struct MJDTime FlashTimes[10];          // up to 10 future flash times
-int FT_Count = 0;                       // # of flash times in array
+volatile bool blnEchoNMEA = true;
 
 
 //********
@@ -293,57 +272,61 @@ ISR( TIMER4_CAPT_vect)
   }
 
   //******************
-  // Check for start/end of LED pulse
+  // Check for start/end of LED pulse in PPS mode
   //
-  if (PPS_Flash_Countdown_Sec == 0)
+  if (FlashMode = PPS)
   {
-    // (Countdown == 0)  => flash should be disabled now
-    //
-
-    // if LED is ON, turn it OFF
-    // else do nothing
-    //
-    if (LED_ON)
+    if (PPS_Flash_Countdown_Sec == 0)
     {
-      // no more flashes left
+      // (Countdown == 0)  => flash should be disabled now
       //
-      bitClear(TCCR2A, COM2B1);             // disable PWM - turn OFF LED
-      tk_LED = GetTicks(CNT4);              // time LED turned OFF
-      LED_ON = false;
 
-      // LOG time LED went OFF
+      // if LED is ON, turn it OFF
+      // else do nothing
       //
-      ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
-      blnLogFlashOFF = true;
+      if (LED_ON)
+      {
+        // no more flashes left
+        //
+        bitClear(TCCR2A, COM2B1);             // disable PWM - turn OFF LED
+        tk_LED = GetTicks(CNT4);              // time LED turned OFF
+        LED_ON = false;
 
+        // LOG time LED went OFF
+        //
+        ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
+        blnLogFlashOFF = true;
+
+      }
     }
-  }
-  else
-  {
-    // (Countdown > 0)  => flash should be enabled
-    //
-    // if (LED OFF)
-    //   turn it on
-    //
-    if (!LED_ON)
+    else
     {
-      bitSet(TCCR2A,COM2B1);                // enable PWM mode => turn on LED
-      tk_LED = GetTicks(CNT4);              // time LED turned ON
-      LED_ON = true;
-
-      // log time LED went ON
+      // (Countdown > 0)  => flash should be enabled
       //
-      ultohexA(logFlashON + offset_logFlashON,tk_LED);
-      blnLogFlashON = true;
+      // if (LED OFF)
+      //   turn it on
+      //
+      if (!LED_ON)
+      {
+        bitSet(TCCR2A,COM2B1);                // enable PWM mode => turn on LED
+        tk_LED = GetTicks(CNT4);              // time LED turned ON
+        LED_ON = true;
 
-    }
+        // log time LED went ON
+        //
+        ultohexA(logFlashON + offset_logFlashON,tk_LED);
+        blnLogFlashON = true;
 
-    // one less second left in this pulse
-    //
-    PPS_Flash_Countdown_Sec--;
+      }
 
-  } // end of LED status update
+      // one less second left in this pulse
+      //
+      PPS_Flash_Countdown_Sec--;
 
+    } // end of LED status update
+
+  } // end of check for PPS flash mode
+  
   //************************
   // Get TIME of PPS event from input capture register
   //
@@ -764,14 +747,24 @@ ISR( TIMER5_CAPT_vect)
   // Is an EXP flash sequence currently active?
   //
   blnLogFlash = false;
-  if ((FlashMode == EXP) && (pulse_countdown > 0))
+  if ((FlashMode == EXP) && (pulse_countdown > 0) )
   {
-    // a pulse sequence is active, is it time for a pulse?
+    // EXP flash cycle active and not done yet
     //
-    now_ms = millis();
-    if ((now_ms >= pulse_next_ms) && (!LED_ON))
+
+    // a flash sequence is active, is it time for a pulse?
+    //
+    if (pulse_interval_countdown > 0)
     {
-        // not done and it is time for a flash pulse
+      // not yet time for a pulse
+      // decrement interval count
+      //
+      pulse_interval_countdown--;
+
+    }
+    else
+    {
+        // it is time for a flash pulse
         //
 
         // turn on LED
@@ -788,11 +781,11 @@ ISR( TIMER5_CAPT_vect)
       TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
       TIMSK3 |= (1 << OCIE3A);                // enable timer compare interrupt
       
-      // set time for next pulse
+      // reset interval countdown
       //
-      pulse_next_ms += pulse_interval_ms;
+      pulse_interval_countdown = pulse_interval;
 
-      // decrement pulse count
+      // decrement total pulse count
       //
       pulse_countdown--;
 
@@ -800,6 +793,7 @@ ISR( TIMER5_CAPT_vect)
       //
       blnLogFlash = true;
     }
+    
 
   }
 
@@ -1046,24 +1040,23 @@ void setup()
   //
   DeviceMode = InitMode;
   FlashMode = PPS;
-  pulse_countdown = 0;     // no EXP sequence active
-  pulse_next_ms = 0;
+  pulse_countdown = 0;          // no EXP sequence active
+  pulse_interval_countdown = 0;
 
   // set PIN modes
   //
   pinMode(LED_BUILTIN,OUTPUT);          // setup built-in LED 
   pinMode(LED_PIN,OUTPUT);              // setup external LED pin
-  pinMode(BUTTON_PIN,INPUT_PULLUP);		  // button input pin
   pinMode(PPS_PIN,INPUT);                    // ICP4 = pin 49 as input
   pinMode(EXP_PIN,INPUT);                    // ICP5 = pin 48 as input
 
-  // connect to PC at 115200 so we send data quickly
+  // connect to PC at 250k to reduce transmission errors with 16mhz Arduino clock
   //
   //
-  Serial.begin(115200);
+  Serial.begin(250000);
   Serial.println("[STARTING!]");
 
-  // 9600 NMEA is the default rate for the GPS
+  // 9600 NMEA is the default rate for the ublox GPS
   //
   Serial1.begin(9600);
 
@@ -1190,164 +1183,16 @@ void setup()
 //==========================================================================
 //  LOOP
 //
-//  IF TimeValid
-//    check for button press
-//    execute startup logic on first time through (after moving to TimeValid mode)
-//  END
-
-//  IF WaitingForGPS
-//    check for timeout
-//  ELSE IF Syncing
-//    check for timeout
-//  ENDIF
 //  - check for GPS serial data
 //  - Then check for incomming commands from PC
+//  - output logging data
 //  - Then execute PC commands
-//  ENDIF
+//  
 //============================================================================
 void loop()                     // run over and over again
 {
   unsigned long tNow;  
   unsigned long now_ms;
-  byte buttonReading;
-
-  
-  //******************************************************
-  //  IF TimeValid
-  //    check for button press
-  //  ELSE
-  //    check for timeouts on WaitingForGPS or Syncing
-  //
-  //******************************************************
-
-  if (DeviceMode == TimeValid)
-  {
-      //  TimeValid
-      //    check for Button Press (with debouncing)
-      //   => if not flashing, initiate a flash
-      //   note: button only works in TimeValid mode
-
-    buttonReading = digitalRead(BUTTON_PIN);
-
-    // check to see if you just pressed the button
-    // (i.e. the input went from HIGH to LOW), and you've waited long enough
-    // since the last press to ignore any noise:
-    //
-    if (buttonReading != lastButtonState)
-    {
-      // reset the debouncing timer
-        lastTimeButtonStateChanged = millis();
-    }
-    if ((millis() - lastTimeButtonStateChanged) > debounceDuration) {
-      // whatever the reading is at, it's been there for longer than the debounce
-      // delay, so take it as the actual current state:
-
-      // if the button state has changed:
-      if (buttonReading != buttonState) {
-        buttonState = buttonReading;
-
-        if (buttonState == LOW)
-        {
- 
-          // debug...
-          Serial.println("[BUTTON PRESSED!]");
-
-          // button PRESSED!
-          //  start flashing at next PPS
-          //
-          // if LED already ON, extend the time...
-          // else
-          //   setup one duration
-          //
-          if (FlashMode == PPS)
-          {
-            // PPS mode flashing (generic camera)
-            //
-            if (LED_ON)
-            {
-              PPS_Flash_Countdown_Sec += Flash_Duration_Sec;
-            }
-            else
-            {
-              PPS_Flash_Countdown_Sec = Flash_Duration_Sec;
-            }
-          }
-
-          else if (FlashMode == EXP)
-          {            
-              // EXP mode flashing
-              //    are we already in a sequence or just starting one?
-              //
-              if (pulse_countdown > 0)
-              {
-                  // already in a sequence, extend the time
-                  //
-                  pulse_countdown += Pulse_Count;
-              }
-              {
-                  // starting a new flash sequence
-                  //
-                now_ms = millis();
-                pulse_next_ms = now_ms;   // enable pulses
-                pulse_countdown = Pulse_Count;
-              }
-
-          }  // end of flash mode check
-
-        } // end of button pressed section
-      }
-    } // end of debounce check for button
-    lastButtonState = buttonReading;    // save the current reading for next time in the loop
-    
-    // Startup tasks
-    //    Do these after first entering TimeValid mode
-    //    if logging to a file, start up the SD card and open the file using the current date/time
-    //
-    if (!fStarted)
-    {
-    
-      //******************
-      //  Initialize SD card for logging
-      //
-      bln_SD_OK = false;
-      if (blnLogToFile)
-      {
-        // we want to log to the SD card
-        //
-        Serial.println("[Intializing SD card for logging...]");
-        if (LogInit())
-        {
-          bln_SD_OK = true;
-          Serial.println("[SD Ready]");
-
-          //   open log file now
-          //   if file open fails, turn OFF file logging
-          //
-          Serial.println("[Opening log file on SD card...]");
-          if (!LogFileOpen())
-          {
-            blnLogToFile = false;
-            Serial.println("[ERROR opening log file]");
-          }
-        }
-        else
-        {
-          // cannot initialize the SD card
-          //   turn off file logging
-          //
-          Serial.println("[ERROR initialing SD card]");
-          blnLogToFile = false;
-          bln_SD_OK = false;
-        }
-      }
-
-      //  we have completed startup, set the flag
-      //
-      fStarted = true; 
-
-    }  // done with startup logic
-
-  }  // end of TimeValid logic
 
 
   //******************************************************
@@ -1385,20 +1230,12 @@ void loop()                     // run over and over again
   }
 
   //******************************************************
-  // Logging update?
+  // Output pending data from logging buffer
   //
   if (blnLogEnable)
   {
-    now_ms = millis();
-    LogFlushAll();         // flush logging buffer
 
-    // in PPS mode, update disk every second...
-    //
-    if ((now_ms - LastFlush) > 1000)
-    {
-      LastFlush = now_ms;
-      LogFlushToFile();       // make sure SD file is valid
-    } // end of check for flush to file
+    LogFlushAll();         // flush logging buffer
 
   }
 

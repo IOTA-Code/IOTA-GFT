@@ -21,11 +21,7 @@ extern volatile uint16_t fifoTail;  // Only accessed by sd writer.
 //
 extern bool blnLogEnable;   // true => logging is enabled
 extern bool blnLogEXP;      // log EXP events
-extern bool blnLogToFile;   // true => file logging is enabled
 extern bool blnLogToSerial;   // flase => serial port logging is enabled
-extern bool bln_SD_OK;
-
-extern bool blnFileOpen;
 
 // data block definition
 //
@@ -40,16 +36,6 @@ extern const uint16_t BLOCK_SIZE;
 
 extern block_t fifoBuffer[];      // allocate buffer space
 
-  // SD objects
-extern SdExFat sd;
-
-extern ExFatFile logFile;
-extern ExFatFile rootDir;    // root directory
-extern ExFatFile tmpFile;
-
-// line buffer
-#define MAXLINE 100
-extern char strLine[];
 
   //******************
   // function prototypes
@@ -57,9 +43,7 @@ extern char strLine[];
   extern bool LogTextWrite(char *, int);
   extern bool LogFlushFull();
   extern bool LogFlushAll();
-  extern void LogFlushToFile();
   extern bool LogInit();
-  extern bool LogFileOpen();
-  extern bool EchoFile(char*);
+
 
 #endif

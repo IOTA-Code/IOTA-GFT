@@ -1,43 +1,25 @@
 /*
   usbComm
 
-  Routines for parsing and executing commands sent to this flashing device via USB.  These routines are divided into
-  three sections: manual operations, event file operations, log file operations.
+  Routines for parsing and executing commands sent to this flashing device via USB.  T
 
   Manual operations allow the user to set/get settings for the general device operation and manually fire off flash sequence. The current operations are:
     * mode - get current device operating mode
     * echo ON | OFF - enable/disable echo of the GPS NMEA data to the usb comm port.
     * ? or HELP - list all commands
 
-    * Camera [generic, shutter] - get/set the camera type 
 
     * Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
     * Flash Duration [X] - get/set the current flash duration (seconds in PPS mode or pulses in EXP mode)
     * Flash Level [X] - get/set the current flashlevel = percent flash PWM (0 - 100)
     * Flash Now - execute a flash sequence now
-    * Flash Time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
-    * Flash Time Clear - clear all flash times
-    * Flash Time  - list all flash times
  
-    * Pulse Duration [X] - get/set the flash pulse duration (us) for EXP mode
-    * Pulse Interval [X] - get/set the flash pulse interval (ms) for EXP mode
-
-  Event file operations with set/get settings for future occultation event observations.  The event file specifies the timeframe for timing flashes associated with a future event.
-  The event file commands to download the current event file from the device or upload a new event file to the device.
-    * event file read
-    * event file upload {file contents}
-
-  Log file operations.  If a flash sequence occurs during after the device is powered up, the device creates a log file for recording all timing information while the device remains powered.
-  With the log file commands, the user can list the log files, download log files, and delete log files on the device.
-    * log file - list any log files
-    * log file read filename
-    * log file rm filename
-    * log file save - savef/flush current log file to SD
+    * Flash Interval [X] - get/set the interval between flash pulses (ms) for EXP mode
+    * Flash Count [X] - get/set the number of flashes in a sequence for EXP mode
 
 */
 
 #include <Arduino.h>
-#include <SdFat.h>
 #include "gpsComm.h"
 #include "iota-gft.h"
 #include "ublox.h"
@@ -50,19 +32,6 @@
 //  GLOBAL variables and definitions
 //
 //===========================================================================================================
-
-//*************************
-//  Command mode
-//
-enum usbMode
-{
-  SingleLine,         // single line USB command
-  EventUpload,        // uploading event file to device
-  EventDownload,      // downloading event file from device
-  LogFileDownload,    // downloading log file from device
-  LogListDownload     // downloading list of log files from device
-};
-usbMode CurrentMode;      // current operating mode of USB comm
 
 //****************************
 // Command string from the PC
@@ -206,33 +175,21 @@ void FindTokens()
 //  COMMANDS:
 // general commands
 //    echo on | off - enable/disable echo of the GPS NMEA data to the usb port.
-//    mode - get current device operating mode
+//    status - get current device status
 //    device - get device name
 //    version - get version info for this device
 //    null - ignore this command string if it includes the word "null" - useful for clearing the input buffer
 //
-// camera commands
-//    camera [generic, shutter ] - get/set camera type
-//
 // flash commands
 //    flash now
-//    flash duration X - X is seconds in PPS mode on number of pulses in EXP mode
+//    flash duration X - X is seconds in PPS mode or total number of pulses in EXP mode
 //    flash level X - X is the percent PWM flash level ( 0 - 100 )
 //    flash mode [pps | exp ] - get/set the current flash mode (PPS or EXP)
-//    flash time  - list current flash times
-//    flash time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
-//
-// pulse commands
 //    pulse duration [X] - get/set the flash pulse duration (us)
 //    pulse interval [X] - get/set the flash pulse interval (ms)
 //
 // logging commands
 //    log [on | off ] - enable disable data logging (default = ON)
-//    log serial [on | off] - enable/disable data logging to serial port (default = OFF)
-//    log file [on | off] - enable/disable data logging to sd card file (default = ON)
-//    log file list - list log files
-//    log file read filename - download (echo) log file "filename"
-//    log file rm filename - delete log file named "filename"
 //
 //======================================
 void ReadCMD()
@@ -361,7 +318,7 @@ void ReadCMD()
 
     //  * mode - get current operating mode
     //
-    else if (strncmp(strCommand+idx,"mode", 4) == 0)
+    else if (strncmp(strCommand+idx,"status", 6) == 0)
     {
       Serial.print("[");
       switch(DeviceMode)
@@ -423,57 +380,6 @@ void ReadCMD()
       }
     }   // end of echo command
 
-    //--------------------
-    // camera commands
-    //    camera [ generic, shutter ]
-    //    
-    else if (strncmp(strCommand+idx,"camera", 6) == 0)
-    {
-      if (tokenCount < 2)
-      {
-        // return current camera type
-        //
-        Serial.print("[");
-        switch(CameraType)
-        {
-          case generic :
-            Serial.print("generic");
-            break;
-          case shutter :
-            Serial.print("shutter");
-            break;
-          default:
-            Serial.print("unknown");
-            break;
-        }
-        Serial.println("]");        
-        return;
-      }
-    
-      idx = idxToken[1];    // second token
-
-      if (strncmp(strCommand+idx,"generic",7) == 0)
-      {
-        CameraType = generic;
-        FlashMode = PPS;
-        Serial.println(strDONE);
-        return;
-      }
-      else if (strncmp(strCommand+idx,"shutter",7) == 0)
-      {
-        CameraType = shutter;
-        FlashMode = EXP;
-        Serial.println(strDONE);
-        return;
-      }
-      else
-      {
-        Serial.println("[ERROR: unable to parse command.]");
-        return;
-      }
-
-
-    } // end of camera command logic
 
 
     //--------------------
@@ -639,52 +545,6 @@ void ReadCMD()
 
       } // end of "flash mode"
 
-      // flash time ...
-      else if (strncmp(strCommand+idx,"time",4) == 0)
-      {
-        // "flash time" command
-        //
-
-        // check for "flash time" with no args => list current flash times
-        //
-        if (tokenCount < 3)
-        {
-          char strTime[20] = "YYYY-MM-DD HH:MM:SS";
-          int duration = Flash_Duration_Sec;
-
-          Serial.println("[Flash Times:");
-          for( int i = 0; i < FT_Count; i++)
-          {
-            sprintf(strTime,"%04d-%02d-%02d %02d:%02d:%02d <%04d (sec)>",
-                    FlashTimes[i].yyyy,FlashTimes[i].mon,FlashTimes[i].day,
-                    FlashTimes[i].hh,FlashTimes[i].mm,FlashTimes[i].ss,duration);
-            Serial.println(strTime);
-          }
-          Serial.println("]");
-          return;
-        }
-
-        // now handle three token flash time commands
-        //
-        idx = idxToken[2];
-
-        //  flash time clear - clear all flash times
-        if (strncmp(strCommand+idx,"clear",5)==0)
-        {
-          FT_Count = 0;
-          Serial.println(strDONE);
-          return;
-        }
-
-        //  * flash time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
-        else 
-        {
-          // assume this is attempt to set a time
-          //
-
-        } // end of flash time X commands
-
-      } // end of flash time commands
 
       else
       {
@@ -755,7 +615,7 @@ void ReadCMD()
         {
           // Get level value
           Serial.print("[pulse interval (ms): ");
-          Serial.print(pulse_interval_ms);
+          Serial.print(pulse_interval);
           Serial.println("]");
           return;
         }
@@ -776,7 +636,7 @@ void ReadCMD()
 
         // set the value
         //
-        pulse_interval_ms = lTmp;
+        pulse_interval = lTmp;
         Serial.println(strDONE);
 
         return;
@@ -788,12 +648,6 @@ void ReadCMD()
     //--------------------
     // logging commands
     //    log [on | off ] - enable disable data logging (default = ON)
-    //    log serial [on | off] - enable/disable data logging to serial port (default = OFF)
-    //    log file [on | off] - enable/disable data logging to sd card file (default = ON)
-    //    log file save - flush buffers to current log file
-    //    log file list - list log files
-    //    log file read filename - download (echo) log file "filename"
-    //    log file rm filename - delete log file named "filename"
     //
     else if (strncmp(strCommand+idx,"log", 3) == 0)
     {
@@ -827,248 +681,11 @@ void ReadCMD()
         //    & flush buffers!
         blnLogEnable = false;   // turn OFF logging
         LogFlushAll();          // flush out pending data
-        LogFlushToFile();       // update file on SD
         Serial.println(strDONE);
 
         return;
       }
 
-      // log serial
-      else if (strncmp(strCommand+idx,"serial",4) == 0)
-      {
-
-        // "log serial" command, now parse third token
-        //
-        if (tokenCount < 3)
-        {
-          // should be at least three tokens...
-          Serial.println("[ERROR: unable to parse command.]");
-          return;
-        }
-        idx = idxToken[2];    // third token - should be ON or OFF
-        if (strncmp(strCommand+idx,"on",2) == 0)
-        {
-          // "log serial ON"
-          blnLogToSerial = true;    // turn ON logging
-          Serial.println(strDONE);
-          return;
-        }
-        else if (strncmp(strCommand+idx,"off",3) == 0)
-        {
-          //  "log serial OFF"
-          //  
-          blnLogToSerial = false;   // turn OFF logging
-          Serial.println(strDONE);
-          return;
-        }
-        else
-        {
-          // unknown...
-          Serial.println("[ERROR: unable to parse command.]");
-          return;
-        }
-
-      }
-      
-      // log file
-      else if (strncmp(strCommand+idx,"file",4) == 0)
-      {
-        // "log file" command, now parse third token
-        //
-        if (tokenCount < 3)
-        {
-          // should be at least three tokens...
-          Serial.println("[ERROR: unable to parse command.]");
-          return;
-        }
-        idx = idxToken[2];
-
-        // log file on
-        if (strncmp(strCommand+idx,"on",2) == 0)
-        {
-          // is SD available?
-          //
-          if (!bln_SD_OK)
-          {
-            // we want to log to the SD card
-            //
-            Serial.println("[Intializing SD card for logging...]");
-            if (LogInit())
-            {
-              bln_SD_OK = true;
-            }
-            else
-            {
-              // cannot initialize the SD card
-              //   turn off file logging
-              //
-              Serial.println("[ERROR initialing SD card]");
-              blnLogToFile = false;
-              bln_SD_OK = false;
-              return;
-            }
-          }
-          // if no log file now, open it
-          //
-          if (!blnFileOpen)
-          {
-            if (!LogFileOpen())
-            {
-              Serial.println("[ERROR opening log file]");
-              blnLogToFile = false;
-              return;
-            }
-          }          
-          // turn on file logging
-          //
-          blnLogToFile = true;
-          Serial.println(strDONE);
-          return;
-        }
-
-        // log file off
-        else if (strncmp(strCommand+idx,"off",3) == 0)
-        {
-          blnLogToFile = false;   // turn OFF logging to file
-          LogFlushAll();          // flush out pending data
-          LogFlushToFile();       // update file on SD
-          Serial.println(strDONE);
-          return;
-        }
-
-        // log file save
-        else if (strncmp(strCommand+idx,"save",4) == 0)
-        {
-          // turn off logging during flush
-          //
-          blnTmp = blnLogToFile;
-          blnLogToFile = false;   // turn OFF logging to file
-          LogFlushAll();          // flush out pending data
-          LogFlushToFile();       // update file on SD
-          blnLogToFile = blnTmp;      /// back to where it was...
-          Serial.println(strDONE);
-          return;
-        }
-
-        // log file list
-        else if (strncmp(strCommand+idx,"list",4) == 0)
-        {        
-          // "log file list" => list log files
-          //
-          // walk through file list and output names for any *.log files
-          //
-          Serial.println("[Log files:");
-
-          rootDir.rewind();   // start at beginning of dir
-
-          // Open next file 
-          //
-          while (tmpFile.openNext(&rootDir, O_RDONLY))
-          {
-            tmpFile.getName(strTmp,25);   // get the name of this file
-
-            if (rootDir.getError())
-            {
-              Serial.println("[ERROR: failed listing files in directory.]]");
-              return;
-            }
-
-            // check filename
-            //
-            blnTmp = true;
-            iTmp = strlen(strTmp);
-            if (tmpFile.isDir())
-            {
-              blnTmp = false;   // directory => skip it
-            }
-            else if (iTmp < 4)
-            {
-              blnTmp = false;   // too short
-            }
-            else if (strncmp(strTmp+(iTmp-4),".log",4) != 0)
-            {
-              blnTmp = false;   // not a .log file
-            }
-
-            // log file => output file name
-            if (blnTmp)
-            {
-              Serial.println(strTmp);
-            }
-
-            // close this file
-            //
-            tmpFile.close();
-
-          } // end of loop through files in root dir
-          Serial.println("]");
-          return;
-
-        }  // list of log files
-
-        // log file read
-        else if (strncmp(strCommand+idx,"read",4)==0)
-        {
-          //  "log file read" - download contents of log file
-          //
-
-          // filename present?
-          //
-          if (idx < 4)
-          {
-            Serial.println("[ERROR no filename for log file read command.]");
-            return;
-          }
-          
-          // logging must be disabled first
-          //
-          if (blnLogEnable)
-          {
-            Serial.println("[ERROR disable logging before file read.]");
-            return;
-          }
-
-          // read contents of log file & echo to serial port
-          //
-          idx = idxToken[3];
-          strncpy(strTmp,strCommand+idx,lenToken[3]);
-          strTmp[lenToken[3]] = 0;    // null terminate filename
-          if (!EchoFile(strTmp))
-          {
-            Serial.println("[ERROR reading log file.]");
-            return;
-          }
-          return;
-
-        } // end of log file read 
-
-        // "log file rm" => delete log file
-        //
-        else if (strncmp(strCommand+idx,"rm",2)==0)
-        {
-          // **********TBD***************
-
-          // logging must be disabled
-          //
-
-          // filename present?
-          //
-          if (idx < 4)
-          {
-            Serial.println("[ERROR no filename for log file rm command.]");
-            return;
-          }
-
-          // remove the file
-          //
-
-          return;
-        } // end of log file rm command
-
-        Serial.println("[ERROR unknown command]");
-        return;
-
-      } // end of parse token after "log" 
       else
       {
         Serial.println("[ERROR unable to parse command.]");
