@@ -717,12 +717,6 @@ bool ReadGPS()
     //
     c = gpsSerial.read();
 
-    // echo it to the USB port
-    //
-    if (blnEchoNMEA)
-    {
-      Serial.write(c);
-    }
     // Watch for beginning/ending of a sentence
     //
 

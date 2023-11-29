@@ -5,7 +5,6 @@
 
   Manual operations allow the user to set/get settings for the general device operation and manually fire off flash sequence. The current operations are:
     * mode - get current device operating mode
-    * echo ON | OFF - enable/disable echo of the GPS NMEA data to the usb comm port.
     * ? or HELP - list all commands
 
 
@@ -174,7 +173,6 @@ void FindTokens()
 //
 //  COMMANDS:
 // general commands
-//    echo on | off - enable/disable echo of the GPS NMEA data to the usb port.
 //    status - get current device status
 //    device - get device name
 //    version - get version info for this device
@@ -344,49 +342,12 @@ void ReadCMD()
 
     }   // end of mode command
 
-    //  * echo ON | OFF - enable/disable echo of the GPS NMEA data to the usb port.
-    //
-    else if (strncmp(strCommand+idx,"echo", 4) == 0)
-    {
-      if (tokenCount < 2)
-      {
-        // should be two tokens...
-        Serial.println("[ERROR: unable to parse command.]");
-        return;
-      }
-      idx = idxToken[1];    // second token
-      if (strncmp(strCommand+idx,"on",2) == 0)
-      {
-        // turn on echo of NMEA data
-        //
-        blnEchoNMEA = true;
-        Serial.println(strDONE);
-        return;
-      }
-      else if (strncmp(strCommand+idx,"off",3) == 0)
-      {
-        // turn OFF echo
-        //
-        blnEchoNMEA = false;
-        Serial.println(strDONE);
-        return;
-      }
-      else
-      {
-        // format error
-        //
-        Serial.println("[ERROR: unable to parse command.]");
-        return;
-      }
-    }   // end of echo command
-
-
-
     //--------------------
     // flash commands
     //    flash now
-    //    flash duration X - X is seconds in PPS mode
-    //    flash level X - X is the percent PWM flash level ( 0 - 100 )
+    //    flash duration [X] - get/set the current PPS flash duration (seconds)
+    //    flash level [X] - get/set the current flash intensity level [ 0 to 255]
+    //    flash range [X] -get/set the current range of flash intensity [ 0 to 2]
     //    flash mode [pps | exp ] - get/set the current flash mode (PPS or EXP)
     //    flash time  - list current flash times
     //    TBD flash time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
@@ -483,20 +444,68 @@ void ReadCMD()
           Serial.println("[ERROR: unable to parse command.]");
           return;
         }
-        else if ((lTmp < 0) || (lTmp > 100))
+        else if ((lTmp < 0) || (lTmp > 255))
         {
-          Serial.println("[ERROR: flashlevel not in range (0,100).]");
+          Serial.println("[ERROR: flashlevel not in range (0,255).]");
         }
 
         // set the value
         //
         flashlevel = lTmp;
-        OCR2B = map(flashlevel, 0, 100, 0, OCR2Alevel);  		// adjust value in OCR2B register for PWM
         Serial.println(strDONE);
 
         return;
 
       } // end of "flash level "
+
+      //  * Flash range [ X ] - get/set the current flash intensity range (0 .. 2)
+      else if (strncmp(strCommand+idx,"range",5) == 0)
+      {
+        if (tokenCount < 3)
+        {
+          // Get range value
+          Serial.print("[flash range: ");
+          Serial.print(flashrange);
+          Serial.println("]");
+          return;
+        }
+
+        // assume we are setting level
+        //
+        idx = idxToken[2];
+
+        // try to parse the value
+        //  should work without null terminating the token...
+        //
+        if (strCommand[idx] == '0')
+        {
+          flashrange = 0;
+          setLEDtoLowRange();
+          Serial.println("[low range]");
+        }
+        else if (strCommand[idx] == '1')
+        {
+          flashrange = 1;
+          setLEDtoMidRange();
+          Serial.println("[mid range]");
+        }
+        else if (strCommand[idx] == '2')
+        {
+          flashrange = 2;
+          setLEDtoHighRange();
+          Serial.println("[high range]");
+        }
+        else
+        {
+          Serial.println("[ERROR: unable to parse command.]");
+          return;
+        }
+
+        Serial.println(strDONE);
+
+        return;
+
+      } // end of "flash range "
 
       // Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
       else if (strncmp(strCommand+idx,"mode",4) == 0)

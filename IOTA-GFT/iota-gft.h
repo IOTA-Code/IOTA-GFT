@@ -76,6 +76,7 @@
   // flashlevel = PWM adjustment
   //
   extern byte flashlevel;
+  extern byte flashrange;
   extern byte OCR2Alevel;
   extern uint16_t Timer3_us;
   extern uint16_t OCR3A_pulse;
@@ -136,5 +137,8 @@
   extern unsigned long GetTicks(CountSource);
   extern void ultohexA(uint8_t *, unsigned long);
   extern void ustohexA(uint8_t *, unsigned short);
+  extern void setLEDtoHighRange();
+  extern void setLEDtoMidRange();
+  extern void setLEDtoLowRange();
 
 #endif // end of block containing entire include file

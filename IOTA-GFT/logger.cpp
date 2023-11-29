@@ -43,7 +43,7 @@ block_t fifoBuffer[FIFO_DIM];      // allocate buffer space
 //
 volatile uint16_t fifoCount = 1; // volatile - shared, ISR and background.
 volatile uint16_t fifoHead = 0;  // Only accessed by buffer writer.
-volatile uint16_t fifoTail = 0;  // Only accessed by sd writer.
+volatile uint16_t fifoTail = 0;  // Only accessed by log writer.
 
 // Pointer to current data block (head block)
 //
@@ -159,7 +159,7 @@ bool LogTextWrite(char *strIn, int iCount)
 } // end of LogTextWrite
 
 //---------------------------------------------
-//  LogFlushFull - write out ONE pending FULL data blocks to SD card
+//  LogFlushFull - write out ONE pending FULL data blocks 
 //      true iff block written
 //---------------------------------------------
 bool LogFlushFull()
@@ -182,7 +182,7 @@ bool LogFlushFull()
     //
     pBlock = &fifoBuffer[fifoTail];
 
-    // write the log buffer data to SD card and/or Serial
+    // write the log buffer data 
     //
  
     if (blnLogToSerial)
@@ -219,23 +219,23 @@ bool LogFlushAll()
 {
   uint32_t m;
 
-  // first write out any pending FULL data blocks
+
+  // first write out all pending FULL data blocks
   //
-  LogFlushFull();
+  while (LogFlushFull());
 
   // Does the head block contain any data?
   //
   if (curBlock->count > 0)
   {
-    
  
+    // write out data from this partial block
+    //
     if (blnLogToSerial)
     {
       // writing log buffer to serial port
       Serial.write(curBlock->data, curBlock->count);
     }
-    // write out data from this partial block
-    //
    
     bytesWritten += curBlock->count;
     curBlock->count = 0;                // head block now empty

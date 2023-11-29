@@ -21,7 +21,8 @@
 //   Connect the Digital pin 48 to the exposure interrupt input (or GND if no exposure int input).  Most cameras will require a pull-up resistor.
 //
 //  LED
-//   Connect LED positive to Digital pin 9
+//   Connect Digital pin 9, Digital pin 10, and Analog pin 1 to the LED driver circuit
+//   
 //
 // 
 
@@ -41,8 +42,12 @@
 //===========================================
 int PPS_PIN = 49;           // PPS signal input from GPS
 int EXP_PIN = 48;           // EXP signal input from camera
-int LED_PIN = 9;            // PIN for LED output
 
+  // LED circuit pins
+#define flashPinB 9        // This PWM pin is controlled by OCR2B
+#define flashPinA 10       // This PWM pin is controlled by OCR2A
+
+#define midRange  55       // Controls switch transistor that provides middle current for LED (D55 = Analog 1)
 
 //=======================================
 //  GLOBAL variables and definitions
@@ -50,7 +55,7 @@ int LED_PIN = 9;            // PIN for LED output
 
 //  VERSION
 //
-const char *strDeviceName = "OpenGFT";
+const char *strDeviceName = "IOTA-GFT";
 const char *strVersion = "v1.00";
 
 volatile OperatingMode DeviceMode;    // current operating mode
@@ -65,7 +70,6 @@ volatile FlashingMode FlashMode;		// current flashing mode
 short int SYNC_SECONDS = 4;            // # of seconds for syncing to GPS time
 volatile short int TimeSync;          // ( > 0 ) => we are syncing to GPS sentence times = # of seconds remaining for sync (small value so no problem with ints)
 
-bool fEventDefined  = false;	// true if event defined
 
 
 //******************
@@ -75,8 +79,8 @@ bool fEventDefined  = false;	// true if event defined
 volatile unsigned short timer4_ov;    // timer 4 overflow count = high word of "time" (32ms)
 volatile unsigned short timer5_ov;    // timer 5 overflow count  
 
-byte OCR2Alevel = 159;  		  			      // PWM frequency set; on Timer 2 with prescaler = 1, 99 makes 160kHz, 159 = 100kHz, 199 = 80kHz
-byte flashlevel = 100;                    // flash brightness level in percent (0 to 100)
+byte flashlevel = 255;                    // flash brightness level in percent (0 to 255)
+byte flashrange = 2;                      //  range of flash intensity ( 0 - 2 )
 
 uint16_t Timer3_us = 16;				          // microseconds per led timer clock count (x256 prescaler)
 uint16_t OCR3A_pulse = 5000/Timer3_us;    // default 5ms pulse duration for EXP mode
@@ -144,7 +148,7 @@ volatile uint16_t pulse_interval_countdown; // # of EXP events until next pulse,
 //*********
 //  INPUTS
 //
-volatile bool blnEchoNMEA = true;
+volatile bool blnEchoNMEA = false;
 
 
 //********
@@ -210,7 +214,7 @@ ISR(TIMER3_COMPA_vect)
 
   // turn OFF LED 
   //
-  bitClear(TCCR2A, COM2B1);         // disable PWM => turn OFF LED
+  OCR2A = OCR2B = 0;
   LED_ON = false;
 
   // turn OFF Timer 3
@@ -274,7 +278,7 @@ ISR( TIMER4_CAPT_vect)
   //******************
   // Check for start/end of LED pulse in PPS mode
   //
-  if (FlashMode = PPS)
+  if (FlashMode == PPS)
   {
     if (PPS_Flash_Countdown_Sec == 0)
     {
@@ -288,7 +292,7 @@ ISR( TIMER4_CAPT_vect)
       {
         // no more flashes left
         //
-        bitClear(TCCR2A, COM2B1);             // disable PWM - turn OFF LED
+        OCR2A = OCR2B = 0;
         tk_LED = GetTicks(CNT4);              // time LED turned OFF
         LED_ON = false;
 
@@ -308,7 +312,7 @@ ISR( TIMER4_CAPT_vect)
       //
       if (!LED_ON)
       {
-        bitSet(TCCR2A,COM2B1);                // enable PWM mode => turn on LED
+        OCR2A = OCR2B = flashlevel;
         tk_LED = GetTicks(CNT4);              // time LED turned ON
         LED_ON = true;
 
@@ -764,12 +768,12 @@ ISR( TIMER5_CAPT_vect)
     }
     else
     {
-        // it is time for a flash pulse
-        //
+      // it is time for a flash pulse
+      //
 
-        // turn on LED
-        //
-      bitSet(TCCR2A,COM2B1);                // enable PWM mode => turn on LED
+       // turn on LED
+      //
+      OCR2A = OCR2B = flashlevel;
       tk_LED = GetTicks(CNT4);              // time LED turned ON
       LED_ON = true;
 
@@ -1023,6 +1027,31 @@ long TimeToSecOfDay(int hh, int mm, int ss)
 
 } // end of TimeToSecOfDay
 
+//=========================================
+//  setLED routines
+//=========================================
+
+void setLEDtoHighRange() 
+{
+  digitalWrite(midRange, HIGH); // Turn off the middle current transistor
+  pinMode(flashPinB, INPUT);    // Turn off the low/middle current PWM output
+  pinMode(flashPinA, OUTPUT);   // Turn on the high current PWM output
+} // setLEDtoHighRange()
+
+void setLEDtoMidRange() 
+{
+  pinMode(flashPinA, INPUT);    // Turn off the high current PWM output
+  digitalWrite(midRange, LOW);  // Turn on the middle current selection transistor
+  pinMode(flashPinB, OUTPUT);   // Turn on the low/middle current PWM output
+} // setLEDtoMidRange()
+
+void setLEDtoLowRange()
+{
+  pinMode(flashPinA, INPUT);    // Turn off the high current PWM output
+  digitalWrite(midRange, HIGH);    // Turn off the middle current transistor
+  pinMode(flashPinB, OUTPUT);   // Turn on the low/middle current PWM output
+} // setLEDtoLowRange()
+
 //===============================================================
 // SETUP
 //===============================================================
@@ -1046,9 +1075,30 @@ void setup()
   // set PIN modes
   //
   pinMode(LED_BUILTIN,OUTPUT);          // setup built-in LED 
-  pinMode(LED_PIN,OUTPUT);              // setup external LED pin
+  digitalWrite(LED_BUILTIN, LOW);
+  
   pinMode(PPS_PIN,INPUT);                    // ICP4 = pin 49 as input
   pinMode(EXP_PIN,INPUT);                    // ICP5 = pin 48 as input
+
+  // setup LED driver circuit
+  //
+
+  // Select highest current drive to LED 
+  TCCR2A = 0;//reset the register => PWM off
+  TCCR2B = 0;//reset the register
+  setLEDtoHighRange();
+  OCR2A = OCR2B = 255;
+
+  // flashpinA and flashpinB are PWM outputs (Timer 2 OC2A and OC2B output respectively)
+  // We start the pins as inputs so that the LED cannot turn on until we are through setting up the PWM
+  pinMode(flashPinA, INPUT);  // Connect flashpin to the LED cathode (the lead on the flat edge of the package). 
+  pinMode(flashPinB, INPUT);  // Connect flashpin to the LED cathode (the lead on the flat edge of the package). 
+
+  // Turn off the mid range current switch transistor
+  pinMode(midRange, OUTPUT);
+  digitalWrite(midRange, HIGH);
+
+  pinMode(flashPinA, OUTPUT);   // Turn on the high current PWM output
 
   // connect to PC at 250k to reduce transmission errors with 16mhz Arduino clock
   //
@@ -1080,16 +1130,25 @@ void setup()
 
   // Timer 2 - PWM for LED (to enable some s/w of control brightness)
   //
-  // set flash pwm frequency using Timer 2 in fast PWM mode; when on, TCNT2 continuously counts from 0 to OCR2A
-  // output OC2B (pin 9) starts high at TCNT2 = 0, goes low when TCNT2 = OCR2B and resets to high at TCNT2 = OCR2A
-  //
-  // pwm pulses are switched on/off by setting/clearing the COM2B1 bit of TCCR2A
-  //
-  TCCR2A = bit(WGM20) | bit(WGM21);  		              // clear OC2B on compare, fast PWM top = OCR2A (with WGM22 below), COM2B1 = 0 => OFF for now
-  TCCR2B = bit(WGM22) | bit(CS20);                    // fast pwm, prescaler = 1
-  OCR2A = OCR2Alevel;  									              // top level of TCNT2
-  OCR2B = map(flashlevel, 0, 100, 0, OCR2Alevel);  		// compare at flashlevel mapped to 0<>OCR2A range; user adjusts this
-  
+
+  TCCR2A = 0;//reset the register
+  TCCR2B = 0;//reset the register
+  TCNT2  = 0;
+
+  TCCR2A = 0b10100001;  // COM2A1 COM2A0 COM2B1 COM2B0    -      -    WGM21  WGM20
+                        //    1      0      1      0      0      0      0      0
+                        // Behavior: PWM on OC2A and OC2B (Pins 9 and 10) ; Waveform generation mode 1 (Phase correct PWM ; TOP = 255)
+                        
+  TCCR2B = 0b00000001;  //  FOC2A  FOC2B    -      -    WGM22   CS22   CS21   CS20
+                        //    0      0      0      0      0      0      0      1
+                        // Behavior: Waveform generation mode 1 (Phase correct PWM ; TOP = 255) ; Prescaler -> clk/1
+
+  // Note: fpwm = fclk/(N·2·255)  --> N = pre-scaler factor
+  //            = 16M /(1·2·255) = 31.36 kHz
+                        
+  OCR2A  = 0;         // duty cycle value
+  OCR2B  = 0;         // duty cycle value
+ 
   //  Timer 3 - for LED flash duration in EXP mode only
   //    CTC mode 4
   //    prescaler OFF => timer OFF for now / but will be set to f/256 for actual timing
