@@ -24,7 +24,6 @@
 #include "ublox.h"
 #include "logger.h"
 #include "usbComm.h"
-#include "SdFat.h"
 
 //===========================================================================================================
 //
@@ -61,7 +60,6 @@ char strDONE[] = "[DONE]";
 void ClearSerialInput()
 {
 
-  byte bIn;
 
   // dumb but should work to clear random data pending from the PC
   //
@@ -69,7 +67,7 @@ void ClearSerialInput()
   {
     while ( Serial.available() > 0 )
     {
-      bIn = Serial.read();
+      Serial.read();
 
     } //end of reading pending data
 
@@ -84,7 +82,6 @@ void ClearSerialInput()
 void FindTokens()
 {
   int idx;
-  char c;
 
   // init
   //
@@ -195,10 +192,7 @@ void ReadCMD()
 
   byte bIn;
   int idx;
-  int iTmp;
   long lTmp;
-  bool blnTmp;
-  char strTmp[50];
   
   // read command from PC
   //  - one byte at a time
@@ -258,7 +252,7 @@ void ReadCMD()
 
     // first check to see if this is a "null" command
     //
-    if (strstr(strCommand,"null") >0 )
+    if (strstr(strCommand,"null") != NULL )
     {
       // command does contain "null", ignore this command string
       //

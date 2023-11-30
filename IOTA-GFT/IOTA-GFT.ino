@@ -26,7 +26,6 @@
 //
 // 
 
-//
 
 //=======================================
 //  INCLUDES
@@ -114,7 +113,6 @@ volatile int offsetUTC_Current = -1;      // current/valid GPS-UTC offset
 //***************
 // PPS event
 //
-volatile unsigned long tk_PPS_valid;  // time of last VALID PPS int
 volatile unsigned long tk_PPS;        // tick "time" of most recent PPS int
 
 
@@ -190,13 +188,10 @@ char logModeTimeValid[] = "{MODE TimeValid}\r\n";
 char logModeFatal[] = "{MODE Fatal xxxx}\r\n";
 #define len_logModeFatal 18
 
-unsigned long LastFlush = 0;            // millis() time of last flush
+char logERROR[] = "{ERROR 0000}\r\n";
+#define len_logERROR 14
+#define offset_logERROR 7
 
-//***********
-// Misc
-//
-int errorCode = 0;
-unsigned long errorLong;
 
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
@@ -260,7 +255,6 @@ ISR( TIMER4_CAPT_vect)
   unsigned long timePrev;
   unsigned long timeDiff;
   unsigned long ppsDiff;
-  bool blnIntervalError;
 
   unsigned long tk_LED;       // LED time in ticks
   bool blnLogFlashON = false;
@@ -336,6 +330,7 @@ ISR( TIMER4_CAPT_vect)
   //
   timeCurrent = GetTicks(IC4);
 
+
   //************************************
   //  Validate PPS interval
   //    if too long or too short => Error Mode (PPS error)
@@ -345,6 +340,11 @@ ISR( TIMER4_CAPT_vect)
   //
   timePrev = tk_PPS;
   tk_PPS = timeCurrent;
+
+  // log the PPS time
+  //
+  ultohexA(logPPS + offset_logPPS,tk_PPS);
+  LogTextWrite(logPPS,len_logPPS);
 
   // delay from last PPS
   //
@@ -367,16 +367,14 @@ ISR( TIMER4_CAPT_vect)
   //  if too short or too long, restart SYNC
   // In other modes... just keep going and let the post-processing catch the errors
   //
-  blnIntervalError = false;
   if (DeviceMode == Syncing)
   {
     if ((timeDiff < (Timer_Second - CLOCK_TOLERANCE)) || (timeDiff > (Timer_Second + CLOCK_TOLERANCE)))
     {
-      // report error?
+      // report error
       //
-//*** TBD
-      errorCode = 1;
-      errorLong = timeDiff;
+      ustohexA(logERROR + offset_logERROR,err_pps_interval_clock);
+      LogTextWrite(logERROR,len_logERROR);
 
       // sync error - restart sync
       //
@@ -393,31 +391,21 @@ ISR( TIMER4_CAPT_vect)
   {
     if ((timeDiff < (Timer_Second - PPS_TOLERANCE)) || (timeDiff > (Timer_Second + PPS_TOLERANCE)))
     {
-      // report error?
+      // report error
       //
-//*** TBD
-      errorCode = 2;
-      errorLong = timeDiff;
+      ustohexA(logERROR + offset_logERROR,err_pps_interval_tolerance);
+      LogTextWrite(logERROR,len_logERROR);
 
       // sync error - restart sync
       //
       DeviceMode = Syncing;
       TimeSync = SYNC_SECONDS;
 
-
       tk_pps_interval_total = 0;
       tk_pps_interval_count = 0;
     }
   }
 
-  // ***** PPS validated
-  //
-  tk_PPS_valid = tk_PPS;
-
-  // log the PPS time
-  //
-  ultohexA(logPPS + offset_logPPS,tk_PPS);
-  LogTextWrite(logPPS,len_logPPS);
 
 
   // check to see if we should log the time of flash ON or OFF
@@ -454,7 +442,6 @@ ISR( TIMER4_CAPT_vect)
   //
   if ( DeviceMode == TimeValid )
   {
-    int ErrorFound;
     
     // TimeValid Mode
     //
@@ -487,17 +474,20 @@ ISR( TIMER4_CAPT_vect)
         {
           // Opps! the internal UTC time does not match the RMC values... display error and start over again with a new SYNC
           //
-          ErrorFound = 6;
+
           DeviceMode = Syncing;
           TimeSync = SYNC_SECONDS;
     
           tk_pps_interval_total = 0;
           tk_pps_interval_count = 0;
           
-          // Error message
+          // report error
           //
-          errorCode = 3;
-//*** TBD          
+          ustohexA(logERROR + offset_logERROR,err_rmc_time);
+          LogTextWrite(logERROR,len_logERROR);
+
+          // leave PPS interrupt routine now... 
+          //
           return;
         }
 
@@ -564,11 +554,11 @@ ISR( TIMER4_CAPT_vect)
     //
     if ((!gpsRMC.valid) || (!gpsPUBX04.valid))
     {
-      ErrorFound = 1;
+      ErrorFound = err_sync_NotValid;
     }
     else if ((gpsRMC.mode != 'A') && (gpsRMC.mode != 'D'))
     {
-      ErrorFound = 3;
+      ErrorFound = err_sync_Mode;
     }
     else
     {
@@ -586,7 +576,7 @@ ISR( TIMER4_CAPT_vect)
       if (timeDiff > Timer_Second)
       {
         // oops... this RMC was sent MORE than one second befor this PPS
-        ErrorFound = 4;    
+        ErrorFound = err_sync_rmcSecDiff;    
       }
       else
       {
@@ -602,7 +592,7 @@ ISR( TIMER4_CAPT_vect)
         if (timeDiff > Timer_Second)
         {
           // oops... this RMC was sent MORE than one second befor this PPS
-          ErrorFound = 5;
+          ErrorFound = err_sync_pubxSecDiff;
         }
         
       } // end of PUBX04 check 
@@ -620,11 +610,7 @@ ISR( TIMER4_CAPT_vect)
     {
       if ((gpsRMC.hh != sec_hh) || (gpsRMC.mm != sec_mm) || (gpsRMC.ss != sec_ss))
       {
-        ErrorFound = 2;
-      }
-      else if ((gpsRMC.mode != 'A') && (gpsRMC.mode != 'D'))
-      {
-        ErrorFound = 3;
+        ErrorFound = err_sync_rmcTimeDiff;
       }
     }
     
@@ -640,10 +626,10 @@ ISR( TIMER4_CAPT_vect)
       tk_pps_interval_total = 0;
       tk_pps_interval_count = 0;
       
-      // Error message
+      // report error
       //
-      errorCode = ErrorFound + 10;
-//*** TBD ****
+      ustohexA(logERROR + offset_logERROR,ErrorFound);
+      LogTextWrite(logERROR,len_logERROR);
 
       // and done with this PPS logic
       return;
@@ -715,9 +701,10 @@ ISR( TIMER4_CAPT_vect)
     //
     DeviceMode = FatalError;    
         
-    //  failure message
-    //
-//*** TBD ***
+      // report error
+      //
+      ustohexA(logERROR + offset_logERROR,err_invalidMode);
+      LogTextWrite(logERROR,len_logERROR);
     
   }  // end of check for current mode
 
@@ -741,7 +728,6 @@ ISR( TIMER5_CAPT_vect)
 {
   unsigned long tk_EXP;
   unsigned long tk_LED;
-  unsigned long now_ms;
   bool blnLogFlash;
 
   // get current time and save it to the event buffer
@@ -826,12 +812,12 @@ ISR( TIMER5_CAPT_vect)
 // ultohexA - convert unsigned long to 8 hex ASCII characters
 //
 //===========================================================================
-uint8_t hexA[16] = {0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x41,0x42,0x43,0x44,0x45,0x46};
-void ultohexA(uint8_t *dest, unsigned long ul)
+char hexA[16] = {0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x41,0x42,0x43,0x44,0x45,0x46};
+void ultohexA(char *dest, unsigned long ul)
 {
 
 
-  uint8_t *pn;
+  char *pn;
   unsigned long nibble;
 
   pn= dest + 7;
@@ -857,11 +843,11 @@ void ultohexA(uint8_t *dest, unsigned long ul)
 // ustohex - convert unsigned short to 4 hex ASCII characters
 //
 //===========================================================================
-void ustohexA(uint8_t *dest, unsigned short us)
+void ustohexA(char *dest, unsigned short us)
 {
 
 
-  uint8_t *pn;
+  char *pn;
   unsigned short nibble;
 
   pn= dest + 3;
@@ -1058,8 +1044,6 @@ void setLEDtoLowRange()
 void setup()  
 {    
   unsigned int sReg;
-
-  int retVal;
   
   //*************************************
   // general Init
@@ -1113,7 +1097,6 @@ void setup()
   //*********************
   //  Init GPS
   //
-  retVal = gpsCommInit();
   if (!gpsCommInit())
   {
     Serial.print("[FATAL error initializing GPS.]");
@@ -1250,15 +1233,20 @@ void setup()
 //============================================================================
 void loop()                     // run over and over again
 {
-  unsigned long tNow;  
-  unsigned long now_ms;
-
+  int retVal;
 
   //******************************************************
   //  check for pending data from GPS
   //
-  ReadGPS();
+  retVal = ReadGPS();
+  if (retVal > 0)
+  {
+    // report error
+    //
+    ustohexA(logERROR + offset_logERROR,retVal);
+    LogTextWrite(logERROR,len_logERROR);
 
+  }
   
   //***************************
   //  report current operating mode?

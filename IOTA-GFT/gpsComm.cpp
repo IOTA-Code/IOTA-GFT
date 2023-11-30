@@ -8,7 +8,6 @@
 */
 
 #include <Arduino.h>
-#include <SdFat.h>
 #include "gpsComm.h"
 #include "iota-gft.h"
 #include "ublox.h"
@@ -36,9 +35,9 @@ struct ubxPUBX04 gpsPUBX04;
 
 #define NMEA_MAX  201    // max length of a nmea sentence
 
-uint8_t nmeaTime[10] = "{TTTTTTTT ";    // string version of NMEA time
-uint8_t nmeaSentence[NMEA_MAX+1];     // current NMEA sentence
-uint8_t nmeaEnd[4] = "}\r\n";           // end of NMEA in log
+char nmeaTime[11] = "{TTTTTTTT ";     // string version of NMEA time
+char nmeaSentence[NMEA_MAX+1];        // current NMEA sentence
+char nmeaEnd[4] = "}\r\n";            // end of NMEA in log
 int nmeaCount = -1;                   // position of next char in NMEA sentence = # of chars in current sentence, 0 => no current sentence
   
 #define MAX_FIELDS 17         // GGA has 17 fields (including the terminating CRLF)
@@ -56,7 +55,7 @@ int fieldStart[MAX_FIELDS];   // start position of each field
 //          * on error or negative value, returns negative value as error
 //
 //===========================================================================
-int d2i(uint8_t *src)
+int d2i(char *src)
 {
     int val;
 
@@ -99,24 +98,13 @@ int d2i(uint8_t *src)
 //  INPUTS:
 //    nmeaSentence[] - array of chars containing sentence
 //    fieldStart[] - array of starting indicies for fields
-//    fieldCount = # of fields (including CRLF)
 //=============================================================
-int ParseGGA(int fieldCount)
+int ParseGGA()
 {
   int iStart;
   int iLen;
-  char cTmp;
 
   gpsGGA.valid = false;
-
-#if 0
-  // should be 17 fields including the CRLF at the end
-  //
-  if (fieldCount < 17)
-  {
-    return NMEA_ERROR;
-  }
-#endif
 
   //******************************
   // field 2 = Latitude
@@ -291,23 +279,14 @@ int ParseGGA(int fieldCount)
 //  INPUTS:
 //    nmeaSentence[] - array of chars containing sentence
 //    fieldStart[] - array of starting indicies for fields
-//    fieldCount = # of fields (including CRLF)
 //=============================================================
-int ParseRMC(int fieldCount)
+int ParseRMC()
 {
   int iStart;
   int iLen;
+  int iTmp;
 
   gpsRMC.valid = false;
-
-#if 0
-  // should be 14 fields including the CRLF at the end
-  //
-  if (fieldCount < 14)
-  {
-    return NMEA_ERROR;
-  }
-#endif
 
   //******************************
   // field 1 = HH:MM:SS time
@@ -325,24 +304,30 @@ int ParseRMC(int fieldCount)
   //  we should keep these changes "atomic"
   //
   noInterrupts();
-  gpsRMC.hh = d2i( &nmeaSentence[iStart]);
-  if (gpsRMC.hh < 0)
+  iTmp = d2i( &nmeaSentence[iStart]);
+  if (iTmp < 0)
   {
     interrupts();
     return NMEA_ERROR;
   }
-  gpsRMC.mm = d2i( &nmeaSentence[iStart+2]);
-  if (gpsRMC.mm < 0)
+  gpsRMC.hh = iTmp;
+  
+  iTmp = d2i( &nmeaSentence[iStart+2]);
+  if (iTmp < 0)
   {
     interrupts();
     return NMEA_ERROR;
   }
-  gpsRMC.ss = d2i( &nmeaSentence[iStart+4]);
-  if (gpsRMC.ss < 0)
+  gpsRMC.mm = iTmp;
+  
+  iTmp = d2i( &nmeaSentence[iStart+4]);
+  if (iTmp < 0)
   {
     interrupts();
     return NMEA_ERROR;
   }
+  gpsRMC.ss = iTmp;
+
   interrupts();
   
   //****************************
@@ -356,21 +341,26 @@ int ParseRMC(int fieldCount)
     return NMEA_ERROR; 
   }
   
-  gpsRMC.day = d2i( &nmeaSentence[iStart]);
-  if (gpsRMC.day < 0)
+  iTmp = d2i( &nmeaSentence[iStart]);
+  if (iTmp < 0)
   {
     return NMEA_ERROR;
   }
-  gpsRMC.mon = d2i( &nmeaSentence[iStart+2]);
-  if (gpsRMC.mon < 0)
+  gpsRMC.day = iTmp;
+
+  iTmp = d2i( &nmeaSentence[iStart+2]);
+  if (iTmp < 0)
   {
     return NMEA_ERROR;
   }
-  gpsRMC.yr = d2i( &nmeaSentence[iStart+4]);
-  if (gpsRMC.yr < 0)
+  gpsRMC.mon = iTmp;
+
+  iTmp = d2i( &nmeaSentence[iStart+4]);
+  if (iTmp < 0)
   {
     return NMEA_ERROR;
   }
+  gpsRMC.yr = iTmp;
 
   //**************
   // field 12 - mode indicator
@@ -398,9 +388,8 @@ int ParseRMC(int fieldCount)
 //  INPUTS:
 //    nmeaSentence[] - array of chars containing sentence
 //    fieldStart[] - array of starting indicies for fields
-//    fieldCount = # of fields (including CRLF)
 //=============================================================
-int ParseDTM(int fieldCount)
+int ParseDTM()
 {
   int iStart;
   int iLen;
@@ -430,24 +419,14 @@ int ParseDTM(int fieldCount)
 //  INPUTS:
 //    nmeaSentence[] - array of chars containing sentence
 //    fieldStart[] - array of starting indicies for fields
-//    fieldCount = # of fields (including CRLF)
 //=============================================================
-int ParsePUBX04(int fieldCount)
+int ParsePUBX04()
 {
   int iStart;
   int iLen;
   int iTmp;
 
   gpsPUBX04.valid = false;
-
-#if 0
-  // should be 12 fields including the CRLF at the end
-  //
-  if (fieldCount < 12)
-  {
-    return NMEA_ERROR;
-  }
-#endif
 
   //******************************
   // field 2 = hhmmss.ss
@@ -460,21 +439,26 @@ int ParsePUBX04(int fieldCount)
     return NMEA_ERROR; 
   }
 
-  gpsPUBX04.hh = d2i( &nmeaSentence[iStart]);
-  if (gpsPUBX04.hh < 0)
+  iTmp = d2i( &nmeaSentence[iStart]);
+  if (iTmp < 0)
   {
     return NMEA_ERROR;
   }
-  gpsPUBX04.mm = d2i( &nmeaSentence[iStart+2]);
-  if (gpsPUBX04.mm < 0)
+  gpsPUBX04.hh = iTmp;
+
+  iTmp = d2i( &nmeaSentence[iStart+2]);
+  if (iTmp < 0)
   {
     return NMEA_ERROR;
   }
-  gpsPUBX04.ss = d2i( &nmeaSentence[iStart+4]);
-  if (gpsPUBX04.ss < 0)
+  gpsPUBX04.mm = iTmp;
+
+  iTmp = d2i( &nmeaSentence[iStart+4]);
+  if (iTmp < 0)
   {
     return NMEA_ERROR;
   }
+  gpsPUBX04.ss = iTmp;
   
   //******************************
   // field 6 = LEAP seconds
@@ -628,19 +612,19 @@ int ParseNMEA()
           ((char)nmeaSentence[fStart+4] == 'M') &&
           ((char)nmeaSentence[fStart+5] == 'C') )
     {
-      return ParseRMC(fieldCount);
+      return ParseRMC();
     }
     else if ( ((char)nmeaSentence[fStart+3] == 'G') &&
           ((char)nmeaSentence[fStart+4] == 'G') &&
           ((char)nmeaSentence[fStart+5] == 'A') )
     {
-      return ParseGGA(fieldCount);
+      return ParseGGA();
     }
     else if ( ((char)nmeaSentence[fStart+3] == 'D') &&
           ((char)nmeaSentence[fStart+4] == 'T') &&
           ((char)nmeaSentence[fStart+5] == 'M') )
     {
-      return ParseDTM(fieldCount);
+      return ParseDTM();
     }
     else
     {
@@ -663,7 +647,7 @@ int ParseNMEA()
     {
       // PUBX,04 sentence
       //
-      return ParsePUBX04(fieldCount);
+      return ParsePUBX04();
     } 
     else
     {
@@ -696,15 +680,20 @@ int ParseNMEA()
 //
 //
 //  Returns:
-//    returns false iff error parsing data
+//    returns non-zero iff error parsing data
 //=============================================================
-bool ReadGPS()
+int ReadGPS()
 {
   char c;
   int resultParse;
   long internalSec;
   long ubxSec;
   int ErrorFound;
+
+  //******
+  //  INIT
+  //
+  ErrorFound = 0;
 
   //************
   // Read/process all currently available characters
@@ -748,7 +737,7 @@ bool ReadGPS()
         // oops! - currently in a sentence, should not be here
         //
         nmeaCount = 0;
-        return false;
+        return err_gps_nmeaCount;
       }
 
       //  ok, save the start char and get ready for next one
@@ -768,7 +757,7 @@ bool ReadGPS()
       {
         // oops! - not in a sentence now
         //
-        return false;
+        return err_gps_nmeaCount;
       }
 
       // ok, save the end of the sentence and call the parser
@@ -806,7 +795,7 @@ bool ReadGPS()
         if (resultParse == NMEA_ERROR)
         {
           nmeaCount = 0;   // restart
-          return false;   // exit on parsing error
+          return err_gps_parseNMEA;   // exit on parsing error
         }
 
         // save time of RMC and PUBX04 sentences
@@ -840,7 +829,6 @@ bool ReadGPS()
           
           // now check PUBX04 time against internal time to catch errors...
           //
-          ErrorFound = 0;
           if ( DeviceMode == TimeValid )
           {
             
@@ -866,7 +854,7 @@ bool ReadGPS()
               
               if (ubxSec != internalSec)
               {
-                ErrorFound = 10;
+                ErrorFound = err_gps_ubxTime;
               }            
               
             }
@@ -878,7 +866,7 @@ bool ReadGPS()
               ubxSec = (long)gpsPUBX04.hh*3600 + (long)gpsPUBX04.mm * 60 + (long)gpsPUBX04.ss;
               if (ubxSec != internalSec)
               {
-                ErrorFound = 11;
+                ErrorFound = err_gps_utcMatch;
               }
             
             } // end of checking internal time for UTC
@@ -897,9 +885,6 @@ bool ReadGPS()
               tk_pps_interval_count = 0;
               interrupts();
 
-              errorCode = ErrorFound + 20;
-//***tbd error report?
-
             }
               
           } // end of RMC check against internal time
@@ -916,6 +901,7 @@ bool ReadGPS()
     
   } // end of loop through available characters
   
+  return ErrorFound;
   
 } // end of ReadGPS
 

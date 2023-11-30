@@ -38,24 +38,6 @@
   extern short int SYNC_SECONDS;                // # of seconds for syncing to GPS time
   extern volatile short int TimeSync;           // ( > 0 ) => we are syncing to GPS sentence times = # of seconds remaining for sync (small value so no problem with ints)
 
-  //*****************************************
-  // struct for storing DateTime
-  //
-  struct MJDTime
-  {
-    uint16_t yyyy;      // year
-    uint8_t mon;        // month
-    uint8_t day;        // day
-    uint32_t MJD;       // MJD for this date
-
-    uint8_t hh;         // hour
-    uint8_t mm;         // min
-    uint8_t ss;         // sec
-    uint32_t;           // sec of day
-
-  };
-
-
   //****************************************
   // Flashing Modes
   //  PPS mode => flash on PPS signal for X whole seconds
@@ -119,24 +101,29 @@
   extern volatile int offsetUTC_Default;      // receiver default value for GPS-UTC offset
   extern volatile int offsetUTC_Current;      // current/valid GPS-UTC offset
 
-  //******************
-  //  Input parms
-  //
-  extern volatile bool blnEchoNMEA;
-  extern struct MJDTime FlashTimes[];           // up to 10 future flash times
-  extern int FT_Count;                          // # of flash times in array
-
-  //***********
-  // debug
-  //
-  extern int errorCode;
+//****************
+// ERROR CODES
+//
+#define err_pps_interval_clock  0
+#define err_pps_interval_tolerance 1
+#define err_rmc_time 2
+#define err_sync_NotValid 3
+#define err_sync_Mode 4
+#define err_sync_rmcTimeDiff 5
+#define err_sync_rmcSecDiff 6
+#define err_sync_pubxSecDiff 7
+#define err_gps_ubxTime 8
+#define err_gps_utcMatch 9
+#define err_gps_parseNMEA 10
+#define err_gps_nmeaCount 11
+#define err_invalidMode 255
 
   //******************
   // function prototypes
   //
   extern unsigned long GetTicks(CountSource);
-  extern void ultohexA(uint8_t *, unsigned long);
-  extern void ustohexA(uint8_t *, unsigned short);
+  extern void ultohexA(char *, unsigned long);
+  extern void ustohexA(char *, unsigned short);
   extern void setLEDtoHighRange();
   extern void setLEDtoMidRange();
   extern void setLEDtoLowRange();

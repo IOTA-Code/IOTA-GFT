@@ -83,7 +83,7 @@
   //   gpsComm functions
   //****************
   extern bool gpsCommInit();
-  extern bool ReadGPS();
+  extern int ReadGPS();
 
 #endif // end of block containing entire include file
 

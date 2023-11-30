@@ -164,7 +164,6 @@ bool LogTextWrite(char *strIn, int iCount)
 //---------------------------------------------
 bool LogFlushFull()
 {
-  uint32_t m;
   block_t* pBlock;
 
   //************
@@ -217,7 +216,6 @@ bool LogFlushFull()
 //---------------------------------------------
 bool LogFlushAll()
 {
-  uint32_t m;
 
 
   // first write out all pending FULL data blocks
