@@ -1,20 +1,7 @@
 /*
   usbComm
 
-  Routines for parsing and executing commands sent to this flashing device via USB.  T
-
-  Manual operations allow the user to set/get settings for the general device operation and manually fire off flash sequence. The current operations are:
-    * mode - get current device operating mode
-    * ? or HELP - list all commands
-
-
-    * Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
-    * Flash Duration [X] - get/set the current flash duration (seconds in PPS mode or pulses in EXP mode)
-    * Flash Level [X] - get/set the current flashlevel = percent flash PWM (0 - 100)
-    * Flash Now - execute a flash sequence now
- 
-    * Flash Interval [X] - get/set the interval between flash pulses (ms) for EXP mode
-    * Flash Count [X] - get/set the number of flashes in a sequence for EXP mode
+  Routines for parsing and executing commands sent to this flashing device via USB.  
 
 */
 
@@ -343,8 +330,6 @@ void ReadCMD()
     //    flash level [X] - get/set the current flash intensity level [ 0 to 255]
     //    flash range [X] -get/set the current range of flash intensity [ 0 to 2]
     //    flash mode [pps | exp ] - get/set the current flash mode (PPS or EXP)
-    //    flash time  - list current flash times
-    //    TBD flash time [YYYY-MM-DD HH:MM:SS] - set the time for a future flash
     //
     else if (strncmp(strCommand+idx,"flash", 5) == 0)
     {

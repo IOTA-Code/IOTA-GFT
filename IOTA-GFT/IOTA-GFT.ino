@@ -1239,7 +1239,7 @@ void loop()                     // run over and over again
   //  check for pending data from GPS
   //
   retVal = ReadGPS();
-  if (retVal > 0)
+  if ((retVal > 0) && (DeviceMode == TimeValid))
   {
     // report error
     //
