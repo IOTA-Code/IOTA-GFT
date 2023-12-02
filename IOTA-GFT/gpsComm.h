@@ -25,7 +25,7 @@
   //*************************
   struct nmeaRMC {
     bool valid;
-    char mode;          // A or D => valid fix
+    char status;          // A  => valid fix
     uint8_t hh;
     uint8_t mm;
     uint8_t ss;

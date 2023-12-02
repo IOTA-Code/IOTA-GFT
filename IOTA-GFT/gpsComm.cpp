@@ -93,6 +93,62 @@ int d2i(char *src)
     
 } // end of d2i
 
+//===========================================================================
+// h2i - decode two POSITIVE ascii digits to int value
+//          * on error or negative value, returns negative value as error
+//
+//===========================================================================
+int h2i(char *src)
+{
+    int val;
+
+    //  first char
+    // 0x20 = ASCII space
+    if (*src == 0x20)
+    {
+      // space for left digit
+      //
+      val = 0;
+      src++;
+    }
+    else
+    {
+      // non-space char
+      if ((*src >= 0x30) && (*src <= 0x39))   // 0x30 = '0', 0x39 = '9'
+      {
+        val = (*src - 0x30)*16;
+      }
+      else if ((*src >= 0x41) && (*src <= 0x46))   // 0x41 = 'A', 0x46 = 'F'
+      {
+        val = (*src - 0x41 + 10 )*16;
+      }
+      else
+      {
+        return -1;
+      }
+  
+      src++;
+    }
+
+    // right most digit
+    //
+    if ((*src >= 0x30) && (*src <= 0x39))   // 0x30 = '0', 0x39 = '9'
+    {
+      val += (*src - 0x30);
+    }
+    else if ((*src >= 0x41) && (*src <= 0x46))   // 0x41 = 'A', 0x46 = 'F'
+    {
+      val += (*src - 0x41 + 10 );
+    }
+    else
+    {
+      return -1;
+    }
+
+    return val;
+    
+} // end of h2i
+
 //=============================================================
 //  ParseGGA - parse & save the GGA data of interest
 //  INPUTS:
@@ -111,6 +167,12 @@ int ParseGGA()
   //
   iStart = fieldStart[2];
   iLen = fieldStart[3] - iStart - 1;
+  if (iLen < 0)
+  {
+    // sentence not valid, just leave as invalid but no error
+    //
+    return NMEA_GGA;
+  }
 
   if ((iLen < 5) || (iLen > MAX_LATLONG))
   {
@@ -288,6 +350,27 @@ int ParseRMC()
 
   gpsRMC.valid = false;
 
+  //**************
+  // field 2 - status indicator
+  //
+  iStart = fieldStart[2];
+  iLen = fieldStart[3] - iStart - 1;
+
+  if (iLen < 1)
+  {
+    return NMEA_ERROR; 
+  }
+  gpsRMC.status = (char)nmeaSentence[iStart];     // status char
+
+  if (gpsRMC.status != 'A')
+  {
+    return NMEA_RMC;   // RMC sentence but data not valid
+  }
+
+  //*****
+  //  sentence is marked as valid, all remaining fields should be present
+  //
+
   //******************************
   // field 1 = HH:MM:SS time
   //
@@ -361,18 +444,6 @@ int ParseRMC()
     return NMEA_ERROR;
   }
   gpsRMC.yr = iTmp;
-
-  //**************
-  // field 12 - mode indicator
-  //
-  iStart = fieldStart[12];
-  iLen = fieldStart[13] - iStart - 1;
-
-  if (iLen < 1)
-  {
-    return NMEA_ERROR; 
-  }
-  gpsRMC.mode = (char)nmeaSentence[iStart];     // mode char
   
   //**********
   // all done
@@ -555,6 +626,33 @@ int ParseNMEA()
       if (iPos >= nmeaCount)
       {
         return NMEA_ERROR;     // no start of next field => unexpected end of sentence
+      }
+      fieldStart[iField] = iPos;
+
+    }
+    else if ((char)nmeaSentence[iPos] == '*')
+    {
+      // * => end of actual sentence data, next two chars are the checksum, then terminating CRLF
+      //      last field with be the two checksum characters
+      //
+      byte chksum = (byte)nmeaSentence[1];
+      for( int i = 2; i < iPos; i++)
+      {
+        chksum = chksum ^ (byte)nmeaSentence[i];
+      }
+
+      if ((int)chksum != (h2i(nmeaSentence + iPos+1)))
+      {
+        // checksum didn't match
+        //
+        return NMEA_ERROR;
+      }
+
+      iPos++;         // -> one past the * 
+      iField++;       // last field = checksum character
+      if ( (iPos+2) > nmeaCount)
+      {
+        return NMEA_ERROR;     // not enough room for two checksum characters
       }
       fieldStart[iField] = iPos;
 

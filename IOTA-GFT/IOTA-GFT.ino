@@ -515,7 +515,7 @@ ISR( TIMER4_CAPT_vect)
       // no valid RMC or PUBX04, keep waiting
       return;
     }
-    else if ((gpsRMC.mode != 'A') && (gpsRMC.mode != 'D'))
+    else if (gpsRMC.status != 'A')
     {
       // wait for a good fix
       return;
@@ -556,7 +556,7 @@ ISR( TIMER4_CAPT_vect)
     {
       ErrorFound = err_sync_NotValid;
     }
-    else if ((gpsRMC.mode != 'A') && (gpsRMC.mode != 'D'))
+    else if (gpsRMC.status != 'A')
     {
       ErrorFound = err_sync_Mode;
     }
