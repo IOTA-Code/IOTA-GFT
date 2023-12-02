@@ -163,10 +163,13 @@ void FindTokens()
 //    null - ignore this command string if it includes the word "null" - useful for clearing the input buffer
 //
 // flash commands
-//    flash now
+//    flash now - start flash sequence at the next PPS or EXP pulse
 //    flash duration X - X is seconds in PPS mode or total number of pulses in EXP mode
 //    flash level X - X is the percent PWM flash level ( 0 - 100 )
 //    flash mode [pps | exp ] - get/set the current flash mode (PPS or EXP)
+//    led [ON | OFF] - turn the LED on/off right now
+//
+//    ... tbd will rename these options ...
 //    pulse duration [X] - get/set the flash pulse duration (us)
 //    pulse interval [X] - get/set the flash pulse interval (ms)
 //
@@ -431,6 +434,7 @@ void ReadCMD()
         // set the value
         //
         flashlevel = lTmp;
+
         Serial.println(strDONE);
 
         return;
@@ -449,7 +453,7 @@ void ReadCMD()
           return;
         }
 
-        // assume we are setting level
+        // assume we are setting range
         //
         idx = idxToken[2];
 
@@ -543,6 +547,7 @@ void ReadCMD()
 
     } // end of flash command logic
 
+
     //--------------------
     // pulse commands (for EXP flashing)
     //  * pulse duration [X] - get/set the flash pulse duration (us)
@@ -596,7 +601,7 @@ void ReadCMD()
 
         return;
 
-      } // end of "pulse interval "
+      } // end of "pulse duration "
       else if (strncmp(strCommand+idx,"interval",8) == 0)
       {
         if (tokenCount < 3)

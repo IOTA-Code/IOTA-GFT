@@ -162,16 +162,16 @@ char logEXP[] = "{TTTTTTTT E}\r\n";
 #define offset_logEXP 1
 
 char logFlashON[] = "{TTTTTTTT +}\r\n";
-#define len_logFlashON 14
-#define offset_logFlashON 1
+int len_logFlashON = 14;
+int offset_logFlashON = 1;
 
 char logFlashOFF[] = "{TTTTTTTT -}\r\n";
 #define len_logFlashOFF 14
 #define offset_logFlashOFF 1
 
 char logFlashFINAL[] = "{TTTTTTTT !}\r\n";    // end of final flash pulse in sequence
-#define len_logFlashFINAL 14
-#define offset_logFlashFINAL 1
+int len_logFlashFINAL = 14;
+int offset_logFlashFINAL = 1;
 
 char logModeInit[] = "{MODE Init}\r\n";
 #define len_logModeInit 13
@@ -269,9 +269,9 @@ ISR( TIMER4_CAPT_vect)
     return;
   }
 
-  //******************
   // Check for start/end of LED pulse in PPS mode
   //
+  //******************
   if (FlashMode == PPS)
   {
     if (PPS_Flash_Countdown_Sec == 0)
@@ -286,7 +286,7 @@ ISR( TIMER4_CAPT_vect)
       {
         // no more flashes left
         //
-        OCR2A = OCR2B = 0;
+        OCR2A = OCR2B = 0;                    // LED OFF
         tk_LED = GetTicks(CNT4);              // time LED turned OFF
         LED_ON = false;
 

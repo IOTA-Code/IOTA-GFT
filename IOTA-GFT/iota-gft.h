@@ -101,22 +101,32 @@
   extern volatile int offsetUTC_Default;      // receiver default value for GPS-UTC offset
   extern volatile int offsetUTC_Current;      // current/valid GPS-UTC offset
 
-//****************
-// ERROR CODES
-//
-#define err_pps_interval_clock  0
-#define err_pps_interval_tolerance 1
-#define err_rmc_time 2
-#define err_sync_NotValid 3
-#define err_sync_Mode 4
-#define err_sync_rmcTimeDiff 5
-#define err_sync_rmcSecDiff 6
-#define err_sync_pubxSecDiff 7
-#define err_gps_ubxTime 8
-#define err_gps_utcMatch 9
-#define err_gps_parseNMEA 10
-#define err_gps_nmeaCount 11
-#define err_invalidMode 255
+  // output strings
+  //
+  extern char logFlashON[];
+  extern int len_logFlashON;
+  extern int offset_logFlashON;
+
+  extern char logFlashFINAL[];
+  extern int len_logFlashFINAL;
+  extern int offset_logFlashFINAL;
+
+  //****************
+  // ERROR CODES
+  //
+  #define err_pps_interval_clock  0
+  #define err_pps_interval_tolerance 1
+  #define err_rmc_time 2
+  #define err_sync_NotValid 3
+  #define err_sync_Mode 4
+  #define err_sync_rmcTimeDiff 5
+  #define err_sync_rmcSecDiff 6
+  #define err_sync_pubxSecDiff 7
+  #define err_gps_ubxTime 8
+  #define err_gps_utcMatch 9
+  #define err_gps_parseNMEA 10
+  #define err_gps_nmeaCount 11
+  #define err_invalidMode 255
 
   //******************
   // function prototypes
