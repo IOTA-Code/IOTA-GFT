@@ -381,8 +381,9 @@ ISR( TIMER4_CAPT_vect)
       tk_pps_interval_total = 0;
       tk_pps_interval_count = 0;
 
-      DeviceMode = Syncing;
+      DeviceMode = WaitingForGPS;
       TimeSync = SYNC_SECONDS;
+      ppsDiff = 0;                // reset this to no error for now.
 
 
     }
@@ -398,8 +399,9 @@ ISR( TIMER4_CAPT_vect)
 
       // sync error - restart sync
       //
-      DeviceMode = Syncing;
+      DeviceMode = WaitingForGPS;
       TimeSync = SYNC_SECONDS;
+      ppsDiff = 0;                // reset this to no error for now.
 
       tk_pps_interval_total = 0;
       tk_pps_interval_count = 0;
@@ -437,6 +439,7 @@ ISR( TIMER4_CAPT_vect)
   //
   //  *Syncing Mode
   //    - validate data and restart if necessary
+  //    - NOTE: should always move here from WaitingForGPS => errors should go to WaitingForGPS mode first
   //
   //
   //
@@ -475,7 +478,7 @@ ISR( TIMER4_CAPT_vect)
           // Opps! the internal UTC time does not match the RMC values... display error and start over again with a new SYNC
           //
 
-          DeviceMode = Syncing;
+          DeviceMode = WaitingForGPS;
           TimeSync = SYNC_SECONDS;
     
           tk_pps_interval_total = 0;
@@ -620,7 +623,7 @@ ISR( TIMER4_CAPT_vect)
     {
       // failed the test - report error and restart sync
       //
-      DeviceMode = Syncing;
+      DeviceMode = WaitingForGPS;
       TimeSync = SYNC_SECONDS;
 
       tk_pps_interval_total = 0;
