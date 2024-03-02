@@ -1026,7 +1026,7 @@ bool gpsCommInit()
   if (retVal > 0)
   {
     Serial.print("[ERROR initializing GPS module : ");
-    Serial.print(retVal,HEX);
+    Serial.print(retVal);
     Serial.println("]");
     return( false );
   }

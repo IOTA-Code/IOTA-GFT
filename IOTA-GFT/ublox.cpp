@@ -30,7 +30,15 @@ int ubxInit()
   uint8_t enableRMC[] = {0x06, 0x01, 0x03, 0x00, 0xF0, 0x04, 0x01};       // Set GPRMC rate on current target
   uint8_t enableGGA[] = {0x06, 0x01, 0x03, 0x00, 0xF0, 0x00, 0x01};       // Set GPGGA rate on current target
   uint8_t enableDTM[] = {0x06, 0x01, 0x03, 0x00, 0xF0, 0x0A, 0x01};       // Set GPDTM rate on current target
+  uint8_t enableGSV[] = {0x06, 0x01, 0x03, 0x00, 0xF0, 0x03, 0x01};       // Set GPGSV rate on current target
   uint8_t enablePUBX04[] = {0x06, 0x01, 0x03, 0x00, 0xF1, 0x04, 0x01};    // Set PUBX,04 rate on current target
+
+  uint8_t disableGNSS[] = {0x06, 0x3E, 0x24, 0x00, 0x00, 0x10, 0x10, 0x04,
+                                 0x00,0x04,0xFF,0x00,0x01,0x00,0x00,0x00,
+                                 0x01,0x01,0x03,0x00,0x00,0x00,0x00,0x00,
+                                 0x05,0x00,0x03,0x00,0x00,0x00,0x00,0x00,
+                                 0x06,0x08,0xFF,0x00,0x00,0x00,0x00,0x00};    // disable SBAS, QZSS, GNSS if present
+
 
   uint8_t configTimepulse[] = {0x06, 0x07, 0x14, 0x00,        //   configure timepulse
                           0x40, 0x42, 0x0F, 0x00,             // time interval = 1,000,000 us
@@ -117,6 +125,7 @@ int ubxInit()
   }
 #endif
 
+
   //*********************************
   //  TURN ON sentences that we want
   //    GPRMC
@@ -147,6 +156,15 @@ int ubxInit()
   if (!ubxGetAck(enablePUBX04))
   {
     return gps_E_PUBX04;
+  }
+
+  //************************************
+  //  Disable SBASS, QZSS and GNSS if present
+  //************************************
+  ubxSend(disableGNSS,sizeof(disableGNSS)/sizeof(uint8_t));
+  if (!ubxGetAck(disableGNSS))
+  {
+    return gps_E_GNSS;
   }
 
 

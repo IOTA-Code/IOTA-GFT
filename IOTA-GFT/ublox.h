@@ -24,6 +24,8 @@
   #define gps_E_PUBX04  4
   #define gps_E_CFGTP   5
   #define gps_E_CFGDTM  6
+  #define gps_E_SBAS    7
+  #define gps_E_GNSS    8
 
   //++++++++++++++++++++++++++++++++++++++++
   // function prototypes
