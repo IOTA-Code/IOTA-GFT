@@ -167,7 +167,7 @@ int ParseGGA()
   //
   iStart = fieldStart[2];
   iLen = fieldStart[3] - iStart - 1;
-  if (iLen < 0)
+  if (iLen <= 0)
   {
     // sentence not valid, just leave as invalid but no error
     //
