@@ -13,12 +13,54 @@
   //*************************
   // NMEA return codes
   //*************************
-  #define NMEA_ERROR    0
+  //#define NMEA_ERROR    0
   #define NMEA_UNKNOWN  1
   #define NMEA_RMC      2
   #define NMEA_GGA      3
   #define NMEA_DTM      4
   #define NMEA_PUBX04   5
+
+  #define NMEA_ERROR_MISC	-1
+
+  #define NMEA_ERROR_GGA_LAT -10
+  #define NMEA_ERROR_GGA_NSLEN -11
+  #define NMEA_ERROR_GGA_NS -12
+  #define NMEA_ERROR_GGA_LONG -13
+  #define NMEA_ERROR_GGA_EWLEN -14
+  #define NMEA_ERROR_GGA_EW -15
+  #define NMEA_ERROR_GGA_ALT -16
+  #define NMEA_ERROR_GGA_ALTULEN -17
+  #define NMEA_ERROR_GGA_ALTU -18
+  #define NMEA_ERROR_GGA_GEOID -19
+  #define NMEA_ERROR_GGA_GULEN -20
+  #define NMEA_ERROR_GGA_GU -21
+
+  #define NMEA_ERROR_RMC_STATUSLEN -30
+  #define NMEA_ERROR_RMC_TIMELEN -31
+  #define NMEA_ERROR_RMC_HH -32
+  #define NMEA_ERROR_RMC_MM -33
+  #define NMEA_ERROR_RMC_SS -34
+  #define NMEA_ERROR_RMC -35
+  #define NMEA_ERROR_RMC_DAYLEN -36
+  #define NMEA_ERROR_RMC_DAY -37
+  #define NMEA_ERROR_RMC_MON -38
+  #define NMEA_ERROR_RMC_YR -39
+
+  #define NMEA_ERROR_DTM -50
+
+  #define NMEA_ERROR_PUBX04_TIMELEN -60
+  #define NMEA_ERROR_PUBX04_HH -61
+  #define NMEA_ERROR_PUBX04_MM -62
+  #define NMEA_ERROR_PUBX04_SS -63
+  #define NMEA_ERROR_PUBX04_OFFSETLEN -64
+  #define NMEA_ERROR_PUBX04_OFFSETPARSE -65
+  #define NMEA_ERROR_PUBX04_NOD -66
+  
+  #define NMEA_ERROR_SENTEND -67
+  #define NMEA_ERROR_CHKSUM_WRONG -68
+  #define NMEA_ERROR_CHKSUM_MISSING -69
+  #define NMEA_ERROR_NOCRLF -70
+  #define NMEA_ERROR_TOOSHORT -71
 
   //*************************
   // NMEA sentence data structures

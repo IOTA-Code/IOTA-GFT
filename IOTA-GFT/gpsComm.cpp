@@ -176,7 +176,7 @@ int ParseGGA()
 
   if ((iLen < 5) || (iLen > MAX_LATLONG))
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_GGA_LAT; 
   }
 
   for( int i = 0; i < MAX_LATLONG; i++ )
@@ -199,13 +199,13 @@ int ParseGGA()
 
   if (iLen < 1)
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_GGA_NSLEN; 
   }
   gpsGGA.NS = (char)nmeaSentence[iStart];  
   if ( ((char)gpsGGA.NS != 'N') && ((char)gpsGGA.NS != 'n') && 
           ((char)gpsGGA.NS != 'S') && ((char)gpsGGA.NS != 's') )
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_GGA_NS;
   }
 
   //******************************
@@ -216,7 +216,7 @@ int ParseGGA()
 
   if ((iLen < 5) || (iLen > MAX_LATLONG))
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_GGA_LONG; 
   }
 
   for( int i = 0; i < MAX_LATLONG; i++ )
@@ -239,13 +239,13 @@ int ParseGGA()
 
   if (iLen < 1)
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_GGA_EWLEN; 
   }
   gpsGGA.EW = (char)nmeaSentence[iStart];
   if ( ((char)gpsGGA.EW != 'E') && ((char)gpsGGA.EW != 'e') && 
           ((char)gpsGGA.EW != 'W') && ((char)gpsGGA.EW != 'w') )
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_GGA_EW;
   }
 
   //******************************
@@ -256,7 +256,7 @@ int ParseGGA()
 
   if ((iLen < 1) || (iLen > MAX_ALT))
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_GGA_ALT; 
   }
 
   for( int i = 0; i < MAX_ALT; i++ )
@@ -280,12 +280,12 @@ int ParseGGA()
 
   if (iLen < 1)
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_GGA_ALTULEN; 
   }
   gpsGGA.alt_units = (char)nmeaSentence[iStart];
   if ((gpsGGA.alt_units != 'M') && (gpsGGA.alt_units != 'm'))      // must be "m"
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_GGA_ALTU;
   }
 
   //******************************
@@ -296,7 +296,7 @@ int ParseGGA()
 
   if ((iLen < 1) || (iLen > MAX_ALT))
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_GGA_GEOID; 
   }
 
   for( int i = 0; i < MAX_ALT; i++ )
@@ -319,12 +319,12 @@ int ParseGGA()
 
   if (iLen < 1)
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_GGA_GULEN; 
   }
   gpsGGA.sep_units = (char)nmeaSentence[iStart];
   if ((gpsGGA.sep_units != 'M') && (gpsGGA.sep_units != 'm'))      // must be "m"
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_GGA_GU;
   }
   
   //**********
@@ -358,7 +358,7 @@ int ParseRMC()
 
   if (iLen < 1)
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_RMC_STATUSLEN; 
   }
   gpsRMC.status = (char)nmeaSentence[iStart];     // status char
 
@@ -379,7 +379,7 @@ int ParseRMC()
 
   if (iLen < 6)
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_RMC_TIMELEN; 
   }
 
   //*** protect from interrupts ***
@@ -391,7 +391,7 @@ int ParseRMC()
   if (iTmp < 0)
   {
     interrupts();
-    return NMEA_ERROR;
+    return NMEA_ERROR_RMC_HH;
   }
   gpsRMC.hh = iTmp;
   
@@ -399,7 +399,7 @@ int ParseRMC()
   if (iTmp < 0)
   {
     interrupts();
-    return NMEA_ERROR;
+    return NMEA_ERROR_RMC_MM;
   }
   gpsRMC.mm = iTmp;
   
@@ -407,7 +407,7 @@ int ParseRMC()
   if (iTmp < 0)
   {
     interrupts();
-    return NMEA_ERROR;
+    return NMEA_ERROR_RMC_SS;
   }
   gpsRMC.ss = iTmp;
 
@@ -421,27 +421,27 @@ int ParseRMC()
 
   if (iLen < 6)
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_RMC_DAYLEN; 
   }
   
   iTmp = d2i( &nmeaSentence[iStart]);
   if (iTmp < 0)
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_RMC_DAY;
   }
   gpsRMC.day = iTmp;
 
   iTmp = d2i( &nmeaSentence[iStart+2]);
   if (iTmp < 0)
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_RMC_MON;
   }
   gpsRMC.mon = iTmp;
 
   iTmp = d2i( &nmeaSentence[iStart+4]);
   if (iTmp < 0)
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_RMC_YR;
   }
   gpsRMC.yr = iTmp;
   
@@ -473,7 +473,7 @@ int ParseDTM()
 
   if (iLen != 3)
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_DTM;
   }
 
   for (int i = 0; i< 3; i++)
@@ -507,27 +507,27 @@ int ParsePUBX04()
 
   if (iLen < 6)
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_PUBX04_TIMELEN; 
   }
 
   iTmp = d2i( &nmeaSentence[iStart]);
   if (iTmp < 0)
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_PUBX04_HH;
   }
   gpsPUBX04.hh = iTmp;
 
   iTmp = d2i( &nmeaSentence[iStart+2]);
   if (iTmp < 0)
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_PUBX04_MM;
   }
   gpsPUBX04.mm = iTmp;
 
   iTmp = d2i( &nmeaSentence[iStart+4]);
   if (iTmp < 0)
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_PUBX04_SS;
   }
   gpsPUBX04.ss = iTmp;
   
@@ -541,7 +541,7 @@ int ParsePUBX04()
   //
   if ((iLen < 2) || (iLen > 3))
   {
-    return NMEA_ERROR; 
+    return NMEA_ERROR_PUBX04_OFFSETLEN; 
   }
   gpsPUBX04.cLeap[0] = nmeaSentence[iStart];
   gpsPUBX04.cLeap[1] = nmeaSentence[iStart+1];
@@ -551,7 +551,7 @@ int ParsePUBX04()
   iTmp = d2i(&nmeaSentence[iStart]);
   if (iTmp < 0)
   {
-    return NMEA_ERROR;
+    return NMEA_ERROR_PUBX04_OFFSETPARSE;
   }
   gpsPUBX04.usLeapSec = (uint8_t)iTmp;
 
@@ -575,7 +575,7 @@ int ParsePUBX04()
     }
     else
     {
-      return NMEA_ERROR;
+      return NMEA_ERROR_PUBX04_NOD;
     }
   }
   
@@ -596,6 +596,10 @@ int ParsePUBX04()
 //  INPUTS:
 //    nmeaSentence[] - array of chars containing sentence
 //    nmeaCount = # of chars in sentence (including terminating CRLF)
+//
+//  RETURNS:
+//    negative value for errors
+//    positive => sentence type
 //=============================================================
 int ParseNMEA()
 {
@@ -625,7 +629,7 @@ int ParseNMEA()
       iPos++;             // start with position past ','
       if (iPos >= nmeaCount)
       {
-        return NMEA_ERROR;     // no start of next field => unexpected end of sentence
+        return NMEA_ERROR_SENTEND;     // no start of next field => unexpected end of sentence
       }
       fieldStart[iField] = iPos;
 
@@ -645,14 +649,14 @@ int ParseNMEA()
       {
         // checksum didn't match
         //
-        return NMEA_ERROR;
+        return NMEA_ERROR_CHKSUM_WRONG;
       }
 
       iPos++;         // -> one past the * 
       iField++;       // last field = checksum character
       if ( (iPos+2) > nmeaCount)
       {
-        return NMEA_ERROR;     // not enough room for two checksum characters
+        return NMEA_ERROR_CHKSUM_MISSING;     // not enough room for two checksum characters
       }
       fieldStart[iField] = iPos;
 
@@ -680,12 +684,12 @@ int ParseNMEA()
   //
   if ((char)nmeaSentence[iPos] != '\n')
   {
-    return NMEA_ERROR;       // terminated loop without finding CRLF
+    return NMEA_ERROR_NOCRLF;       // terminated loop without finding CRLF
   }
   fieldCount = iField + 1;
   if (fieldCount < 3)
   {
-    return NMEA_ERROR;     // all sentences have at least three fields
+    return NMEA_ERROR_TOOSHORT;     // all sentences have at least three fields
   }
   
   //************
@@ -890,10 +894,10 @@ int ReadGPS()
         // call the parser
         //
         resultParse = ParseNMEA();
-        if (resultParse == NMEA_ERROR)
+        if (resultParse < 0)
         {
           nmeaCount = 0;   // restart
-          return err_gps_parseNMEA;   // exit on parsing error
+          return (err_gps_parseNMEA * 256) + -resultParse;   // exit on parsing error
         }
 
         // save time of RMC and PUBX04 sentences
