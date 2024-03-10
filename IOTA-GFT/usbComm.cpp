@@ -682,8 +682,24 @@ void ReadCMD()
       // turn LED on
       //  NOTE: if LED already ON, do nothing and no error
       //
-      if ((strncmp(strCommand+idx,"on",2) == 0) && !LED_ON)
+      if (strncmp(strCommand+idx,"on",2) == 0)
       {
+
+        // verify LED mode
+        //
+        if (FlashMode != LED)
+        {
+          // should be at least two tokens...
+          Serial.println("[ERROR: not in LED flash mode]");
+          return;
+        }
+
+        // if LED already ON, do nothing
+        //
+        if (LED_ON)
+        {
+          return;
+        }
 
         // disable interrupts
         sReg = SREG;
@@ -711,8 +727,24 @@ void ReadCMD()
       // turn LED off
       // IF LED already OFF, do nothing and no error
       //
-      else if ((strncmp(strCommand+idx,"off",3) == 0) && LED_ON)
+      else if (strncmp(strCommand+idx,"off",3) == 0)
       {
+
+        // verify LED mode
+        //
+        if (FlashMode != LED)
+        {
+          // should be at least two tokens...
+          Serial.println("[ERROR: not in LED flash mode]");
+          return;
+        }
+
+        // if LED already OFF, do nothing
+        //
+        if (!LED_ON)
+        {
+          return;
+        }
 
         // disable interrupts
         sReg = SREG;
