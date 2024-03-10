@@ -690,6 +690,8 @@ void ReadCMD()
         //
         if (!LED_ON)
         {
+          byte chk;
+          
           // turn on LED
           //
           OCR2A = OCR2B = flashlevel;
@@ -699,6 +701,8 @@ void ReadCMD()
           //
           tk_LED = GetTicks(CNT4);              // time LED turned ON
           ultohexA(logFlashON + offset_logFlashON,tk_LED);
+          chk = chksum_b(logFlashON,chksum_logFlashON-1);   // compute checksum
+          btohexA(logFlashON + chksum_logFlashON, chk);
           LogTextWrite(logFlashON,len_logFlashON);
         }
 
@@ -725,6 +729,7 @@ void ReadCMD()
         //
         if (LED_ON)
         {
+          byte chk;
 
           // turn OFF LED 
           //
@@ -736,6 +741,8 @@ void ReadCMD()
           tk_LED = GetTicks(CNT4);              // time LED turned OFF
 
           ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
+          chk = chksum_b(logFlashFINAL,chksum_logFlashFINAL-1);   // compute checksum
+          btohexA(logFlashFINAL + chksum_logFlashFINAL, chk);
           LogTextWrite(logFlashFINAL,len_logFlashFINAL);
           
         }

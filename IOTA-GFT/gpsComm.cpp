@@ -37,7 +37,8 @@ struct ubxPUBX04 gpsPUBX04;
 
 char nmeaTime[11] = "{TTTTTTTT ";     // string version of NMEA time
 char nmeaSentence[NMEA_MAX+1];        // current NMEA sentence
-char nmeaEnd[4] = "}\r\n";            // end of NMEA in log
+char nmeaEnd[7] = "}*XX\r\n";         // end of NMEA in log
+int len_nmeaEnd = 6;
 int nmeaCount = -1;                   // position of next char in NMEA sentence = # of chars in current sentence, 0 => no current sentence
   
 #define MAX_FIELDS 17         // GGA has 17 fields (including the terminating CRLF)
@@ -879,9 +880,24 @@ int ReadGPS()
       //
       if (c == '\n')
       {
+        byte chksum;
+
         // terminate the sentence with zero
         //
         nmeaSentence[nmeaCount] = 0;
+
+        // compute checksum
+        chksum = 0;
+        for( int i = 0; i < 10; i++)
+        {
+          chksum = chksum ^ (byte)nmeaTime[i];
+        }
+        for( int i = 0; i < nmeaCount-2; i++)
+        {
+          chksum = chksum ^ (byte)nmeaSentence[i];
+        }
+        chksum = chksum ^ (byte)'}';
+        btohexA(nmeaEnd + 2, chksum);      // insert checksum at end of output string
 
         // log this sentence to buffer 
         //   NOTE: interrupts are enabled so this sentence could be "interrupted"
@@ -889,7 +905,7 @@ int ReadGPS()
         //
         LogTextWrite(nmeaTime,10);
         LogTextWrite(nmeaSentence,nmeaCount-2);
-        LogTextWrite(nmeaEnd,3);
+        LogTextWrite(nmeaEnd,len_nmeaEnd);
 
         // call the parser
         //

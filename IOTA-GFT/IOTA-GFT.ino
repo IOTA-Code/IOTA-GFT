@@ -55,7 +55,7 @@ int EXP_PIN = 48;           // EXP signal input from camera
 //  VERSION
 //
 const char *strDeviceName = "IOTA-GFT";
-const char *strVersion = "v2024-03-10-1";
+const char *strVersion = "v2024-03-10-2";
 
 volatile OperatingMode DeviceMode;    // current operating mode
 volatile bool blnReportMode;          // true => report current mode in log (enabled with each NMEA set)
@@ -154,44 +154,56 @@ volatile bool blnEchoNMEA = false;
 //  serial outputs
 //
 
-char logPPS[] = "{TTTTTTTT P}\r\n";
-#define len_logPPS 14
-#define offset_logPPS 1
+char logPPS[] = "{TTTTTTTT P}*XX\r\n";
+int len_logPPS = 17;
+int offset_logPPS = 1;
+int chksum_logPPS = 13;
 
-char logEXP[] = "{TTTTTTTT E}\r\n";
-#define len_logEXP 14
-#define offset_logEXP 1
+char logEXP[] = "{TTTTTTTT E}*XX\r\n";
+int len_logEXP = 17;
+int offset_logEXP = 1;
+int chksum_logEXP = 13;
 
-char logFlashON[] = "{TTTTTTTT +}\r\n";
-int len_logFlashON = 14;
+char logFlashON[] = "{TTTTTTTT +}*XX\r\n";
+int len_logFlashON = 17;
 int offset_logFlashON = 1;
+int chksum_logFlashON = 13;
 
-char logFlashOFF[] = "{TTTTTTTT -}\r\n";
-#define len_logFlashOFF 14
-#define offset_logFlashOFF 1
+char logFlashOFF[] = "{TTTTTTTT -}*XX\r\n";
+int len_logFlashOFF = 17;
+int offset_logFlashOFF = 1;
+int chksum_logFlashOFF = 13;
 
-char logFlashFINAL[] = "{TTTTTTTT !}\r\n";    // end of final flash pulse in sequence
-int len_logFlashFINAL = 14;
+char logFlashFINAL[] = "{TTTTTTTT !}*XX\r\n";    // end of final flash pulse in sequence
+int len_logFlashFINAL = 17;
 int offset_logFlashFINAL = 1;
+int chksum_logFlashFINAL = 13;
 
-char logModeInit[] = "{MODE Init}\r\n";
-#define len_logModeInit 13
+char logModeInit[] = "{MODE Init}*1F\r\n";
+int len_logModeInit = 16;
+int chksum_logModeInit = 12;
 
-char logModeWaitingForGPS[] = "{MODE WaitingForGPS}\r\n";
-#define len_logModeWaitingForGPS 22
+char logModeWaitingForGPS[] = "{MODE WaitingForGPS}*71\r\n";
+int len_logModeWaitingForGPS = 25;
+int chksum_logModeWaitingForGPS = 21;
 
-char logModeSync[] = "{MODE Sync}\r\n";
-#define len_logModeSync 13
+char logModeSync[] = "{MODE Sync}*02\r\n";
+int len_logModeSync = 16;
+int chksum_logModeSync = 12;
 
-char logModeTimeValid[] = "{MODE TimeValid}\r\n";
-#define len_logModeTimeValid 18
+char logModeTimeValid[] = "{MODE TimeValid FFF}*XX\r\n";
+int len_logModeTimeValid = 25;
+int fmode_logModeTimeValid = 16;
+int chksum_logModeTimeValid = 21;
 
-char logModeFatal[] = "{MODE Fatal xxxx}\r\n";
-#define len_logModeFatal 18
+char logModeFatal[] = "{MODE Fatal}*7B\r\n";
+int len_logModeFatal = 17;
+int chksum_logModeFatal = 13;
 
-char logERROR[] = "{ERROR 0000}\r\n";
-#define len_logERROR 14
-#define offset_logERROR 7
+char logERROR[] = "{ERROR 0000}*XX\r\n";
+int len_logERROR = 17;
+int offset_logERROR = 7;
+int chksum_logERROR = 13;
 
 
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -207,6 +219,7 @@ char logERROR[] = "{ERROR 0000}\r\n";
 ISR(TIMER3_COMPA_vect)
 {
   unsigned long tk_LED;
+  byte chk;
 
   // turn OFF LED 
   //
@@ -224,11 +237,15 @@ ISR(TIMER3_COMPA_vect)
   if (pulse_countdown == 0)
   {
     ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
+    chk = chksum_b(logFlashFINAL,chksum_logFlashFINAL-1);   // compute checksum
+    btohexA(logFlashFINAL + chksum_logFlashFINAL, chk);
     LogTextWrite(logFlashFINAL,len_logFlashFINAL);
   }
   else
   {
     ultohexA(logFlashOFF + offset_logFlashOFF,tk_LED);
+    chk = chksum_b(logFlashOFF,chksum_logFlashOFF-1);   // compute checksum
+    btohexA(logFlashOFF + chksum_logFlashOFF, chk);
     LogTextWrite(logFlashOFF,len_logFlashOFF);
   }
   
@@ -260,6 +277,7 @@ ISR( TIMER4_CAPT_vect)
   unsigned long tk_LED;       // LED time in ticks
   bool blnLogFlashON = false;
   bool blnLogFlashOFF = false;
+  byte chk;
  
   //*****************
   //  If init mode or FatalError, just leave...
@@ -299,6 +317,8 @@ ISR( TIMER4_CAPT_vect)
         // LOG time LED went OFF
         //
         ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
+        chk = chksum_b(logFlashFINAL,chksum_logFlashFINAL-1);   // compute checksum
+        btohexA(logFlashFINAL + chksum_logFlashFINAL, chk);
         blnLogFlashOFF = true;
 
       }
@@ -321,6 +341,8 @@ ISR( TIMER4_CAPT_vect)
         // log time LED went ON
         //
         ultohexA(logFlashON + offset_logFlashON,tk_LED);
+        chk = chksum_b(logFlashON,chksum_logFlashON-1);   // compute checksum
+        btohexA(logFlashON + chksum_logFlashON, chk);
         blnLogFlashON = true;
 
       }
@@ -352,6 +374,8 @@ ISR( TIMER4_CAPT_vect)
   // log the PPS time
   //
   ultohexA(logPPS + offset_logPPS,tk_PPS);
+  chk = chksum_b(logPPS,chksum_logPPS-1);   // compute checksum
+  btohexA(logPPS + chksum_logPPS, chk);
   LogTextWrite(logPPS,len_logPPS);
 
   // delay from last PPS
@@ -382,6 +406,8 @@ ISR( TIMER4_CAPT_vect)
       // report error
       //
       ustohexA(logERROR + offset_logERROR,err_pps_interval_clock);
+      chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
+      btohexA(logERROR + chksum_logERROR, chk);
       LogTextWrite(logERROR,len_logERROR);
 
       // sync error - restart sync
@@ -403,6 +429,8 @@ ISR( TIMER4_CAPT_vect)
       // report error
       //
       ustohexA(logERROR + offset_logERROR,err_pps_interval_tolerance);
+      chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
+      btohexA(logERROR + chksum_logERROR, chk);
       LogTextWrite(logERROR,len_logERROR);
 
       // sync error - restart sync
@@ -495,6 +523,8 @@ ISR( TIMER4_CAPT_vect)
           // report error
           //
           ustohexA(logERROR + offset_logERROR,err_rmc_time);
+          chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
+          btohexA(logERROR + chksum_logERROR, chk);
           LogTextWrite(logERROR,len_logERROR);
 
           // leave PPS interrupt routine now... 
@@ -640,6 +670,8 @@ ISR( TIMER4_CAPT_vect)
       // report error
       //
       ustohexA(logERROR + offset_logERROR,ErrorFound);
+      chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
+      btohexA(logERROR + chksum_logERROR, chk);
       LogTextWrite(logERROR,len_logERROR);
 
       // and done with this PPS logic
@@ -715,6 +747,8 @@ ISR( TIMER4_CAPT_vect)
       // report error
       //
       ustohexA(logERROR + offset_logERROR,err_invalidMode);
+      chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
+      btohexA(logERROR + chksum_logERROR, chk);
       LogTextWrite(logERROR,len_logERROR);
     
   }  // end of check for current mode
@@ -740,6 +774,7 @@ ISR( TIMER5_CAPT_vect)
   unsigned long tk_EXP;
   unsigned long tk_LED;
   bool blnLogFlash;
+  byte chk;
 
   // get current time and save it to the event buffer
   //
@@ -801,11 +836,15 @@ ISR( TIMER5_CAPT_vect)
   // logging - EXP time and (optional) flash time
   //
   ultohexA(logEXP + offset_logEXP,tk_EXP);
+  chk = chksum_b(logEXP,chksum_logEXP-1);   // compute checksum
+  btohexA(logEXP + chksum_logEXP, chk);
   LogTextWrite(logEXP,len_logEXP);
 
   if (blnLogFlash)
   {
       ultohexA(logFlashON + offset_logFlashON,tk_LED);
+      chk = chksum_b(logFlashON,chksum_logFlashON-1);   // compute checksum
+      btohexA(logFlashON + chksum_logFlashON, chk);
       LogTextWrite(logFlashON,len_logFlashON);
 
   }
@@ -818,6 +857,26 @@ ISR( TIMER5_CAPT_vect)
 // MISC Utility routines
 //
 //++++++++++++++++++++++++++++++++++++++++++++++++++
+
+//===========================================================================
+// chksum_b() - return checksum of byte array
+//  INPUTS:
+//    arrayB = pointer to byte array
+//    lenB = # of array elements for checksum
+//===========================================================================
+byte chksum_b( char *arrayB, int lenB)
+{
+
+  byte chksum = 0;
+  for( int i = 0; i < lenB; i++)
+  {
+    chksum = chksum ^ (byte)arrayB[i];
+  }
+
+  return( chksum );
+
+} // end of chksum()
+
 
 //===========================================================================
 // ultohexA - convert unsigned long to 8 hex ASCII characters
@@ -851,7 +910,7 @@ void ultohexA(char *dest, unsigned long ul)
 } // end of ultohex
 
 //===========================================================================
-// ustohex - convert unsigned short to 4 hex ASCII characters
+// ustohexA - convert unsigned short to 4 hex ASCII characters
 //
 //===========================================================================
 void ustohexA(char *dest, unsigned short us)
@@ -877,6 +936,30 @@ void ustohexA(char *dest, unsigned short us)
     pn--;
     
   } // end of for loop through the nibbles
+  
+} // end of ustohexA
+
+//===========================================================================
+// btohexA - convert byte to 2 hex ASCII characters
+//
+//===========================================================================
+void btohexA(char *dest, byte b)
+{
+
+  char *pn = dest + 1;
+  unsigned short nibble;
+  
+  // lower nibble
+  //
+  nibble = (b & 0x0F);
+  *pn = hexA[nibble];
+
+  // upper nibble
+  //
+  b = b >> 4;
+  nibble = (b & 0x0F);
+  pn--;
+  *pn = hexA[nibble];
   
 } // end of ustohexA
 
@@ -1245,7 +1328,7 @@ void setup()
 void loop()                     // run over and over again
 {
   int retVal;
-
+  byte chk;
   //******************************************************
   //  check for pending data from GPS
   //
@@ -1255,6 +1338,8 @@ void loop()                     // run over and over again
     // report error
     //
     ustohexA(logERROR + offset_logERROR,retVal);
+    chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
+    btohexA(logERROR + chksum_logERROR, chk);
     LogTextWrite(logERROR,len_logERROR);
 
   }
@@ -1266,6 +1351,31 @@ void loop()                     // run over and over again
   {
       if (DeviceMode == TimeValid)
       {
+        char *p = logModeTimeValid + fmode_logModeTimeValid;
+
+        // report current flash mode
+        //
+        if (FlashMode == PPS)
+        {
+          *p++ = 'P';
+          *p++ = 'P';
+          *p = 'S';
+        }
+        else if (FlashMode == EXP)
+        {
+          *p++ = 'E';
+          *p++ = 'X';
+          *p = 'P';
+        }
+        else
+        {
+          *p++ = 'E';
+          *p++ = 'R';
+          *p = 'R';
+        }
+
+        chk = chksum_b(logModeTimeValid,chksum_logModeTimeValid-1);   // compute checksum
+        btohexA(logModeTimeValid + chksum_logModeTimeValid, chk);
         LogTextWrite(logModeTimeValid,len_logModeTimeValid);
       }
       else if (DeviceMode == Syncing)

@@ -107,10 +107,12 @@
   extern char logFlashON[];
   extern int len_logFlashON;
   extern int offset_logFlashON;
+  extern int chksum_logFlashON;
 
   extern char logFlashFINAL[];
   extern int len_logFlashFINAL;
   extern int offset_logFlashFINAL;
+  extern int chksum_logFlashFINAL;
 
   //****************
   // ERROR CODES
@@ -135,6 +137,9 @@
   extern unsigned long GetTicks(CountSource);
   extern void ultohexA(char *, unsigned long);
   extern void ustohexA(char *, unsigned short);
+  extern void btohexA(char *, byte);
+  extern byte chksum_b( char *, int);
+
   extern void setLEDtoHighRange();
   extern void setLEDtoMidRange();
   extern void setLEDtoLowRange();
