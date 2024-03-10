@@ -49,8 +49,7 @@
   enum FlashingMode
   {
     PPS,
-    EXP,
-    LED
+    EXP
   };
   extern volatile FlashingMode FlashMode;		// current flashing mode
 

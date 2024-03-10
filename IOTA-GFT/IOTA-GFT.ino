@@ -55,7 +55,7 @@ int EXP_PIN = 48;           // EXP signal input from camera
 //  VERSION
 //
 const char *strDeviceName = "IOTA-GFT";
-const char *strVersion = "v1.03";
+const char *strVersion = "v2024-03-10-1";
 
 volatile OperatingMode DeviceMode;    // current operating mode
 volatile bool blnReportMode;          // true => report current mode in log (enabled with each NMEA set)
@@ -132,6 +132,7 @@ volatile boolean pps_flash = false;           // true IFF LED was flashed with t
 volatile boolean LED_ON = false;      			// LED state
 
 volatile int PPS_Flash_Countdown_Sec;           // # of seconds remaining in a PPS flash
+                                                //  (countdown < 0) => not in PPS flash sequence
 
                                             // EXP flash sequences are short pulses separated by D EXP intervals for a total count of X pulses
                                             //      sequence is enabled when pulse_count is non-zero
@@ -274,6 +275,11 @@ ISR( TIMER4_CAPT_vect)
   //******************
   if (FlashMode == PPS)
   {
+
+    // check status of PPS flash sequence
+    //  countdown >= 0 => in a flash sequence
+    //  countdown == 0 => time to disable flash
+    //  countdown < 0 => not in flash sequence now
     if (PPS_Flash_Countdown_Sec == 0)
     {
       // (Countdown == 0)  => flash should be disabled now
@@ -296,8 +302,10 @@ ISR( TIMER4_CAPT_vect)
         blnLogFlashOFF = true;
 
       }
+      PPS_Flash_Countdown_Sec--;            //  decrement this count => no longer in PPS flash sequence
+
     }
-    else
+    else if (PPS_Flash_Countdown_Sec > 0)
     {
       // (Countdown > 0)  => flash should be enabled
       //

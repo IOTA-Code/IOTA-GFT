@@ -405,6 +405,8 @@ void ReadCMD()
       //  * Flash level [X] - get/set the current flash level 
       else if (strncmp(strCommand+idx,"level",5) == 0)
       {
+        unsigned int sReg;
+
         if (tokenCount < 3)
         {
           // Get level value
@@ -436,12 +438,17 @@ void ReadCMD()
         //
         flashlevel = lTmp;
 
-        // if LED flash mode and LED is ON, change the flash level now
+        // if LED LED is ON, change the flash level now
         //
-        if ((FlashMode == LED) && LED_ON)
+
+        // disable interrupts to ensure LED state doesn't change before setting flashlevel
+        sReg = SREG;
+        noInterrupts();
+        if (LED_ON)
         {
           OCR2A = OCR2B = flashlevel;
         }
+        SREG = sReg;      // re-enable interrrupts
 
         Serial.println(strDONE);
 
@@ -498,7 +505,7 @@ void ReadCMD()
 
       } // end of "flash range "
 
-      // Flash Mode [PPS | EXP | LED] - get/set the current flash mode (PPS or EXP or LED)
+      // Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
       else if (strncmp(strCommand+idx,"mode",4) == 0)
       {
         if (tokenCount < 3)
@@ -512,11 +519,6 @@ void ReadCMD()
           else if (FlashMode == EXP)
           {
             Serial.println("[EXP flash mode.]");
-            return;
-          }
-          else if (FlashMode == LED)
-          {
-            Serial.println("[LED flash mode.]");
             return;
           }
           else
@@ -539,12 +541,6 @@ void ReadCMD()
         else if (strncmp(strCommand+idx,"exp",3) == 0)
         {
           FlashMode = EXP;
-          Serial.println(strDONE);
-          return;
-        }
-        else if (strncmp(strCommand+idx,"led",3) == 0)
-        {
-          FlashMode = LED;
           Serial.println(strDONE);
           return;
         }
@@ -685,40 +681,30 @@ void ReadCMD()
       if (strncmp(strCommand+idx,"on",2) == 0)
       {
 
-        // verify LED mode
+        // disable interrupts to ensure LED state does not change based on interrupt
         //
-        if (FlashMode != LED)
-        {
-          // should be at least two tokens...
-          Serial.println("[ERROR: not in LED flash mode]");
-          return;
-        }
-
-        // if LED already ON, do nothing
-        //
-        if (LED_ON)
-        {
-          return;
-        }
-
-        // disable interrupts
         sReg = SREG;
         noInterrupts();
 
-        // turn on LED
+        // if LED OFF, turn it ON
         //
-        OCR2A = OCR2B = flashlevel;
-        LED_ON = true;
+        if (!LED_ON)
+        {
+          // turn on LED
+          //
+          OCR2A = OCR2B = flashlevel;
+          LED_ON = true;
 
-        // log time LED went ON
-        //
-        tk_LED = GetTicks(CNT4);              // time LED turned ON
-        ultohexA(logFlashON + offset_logFlashON,tk_LED);
-        LogTextWrite(logFlashON,len_logFlashON);
+          // log time LED went ON
+          //
+          tk_LED = GetTicks(CNT4);              // time LED turned ON
+          ultohexA(logFlashON + offset_logFlashON,tk_LED);
+          LogTextWrite(logFlashON,len_logFlashON);
+        }
 
         // reenable interrupts
         //
-        SREG = sReg;              // back on again
+        SREG = sReg;              // enable interrupts again
 
         Serial.println(strDONE);
         return;
@@ -730,41 +716,33 @@ void ReadCMD()
       else if (strncmp(strCommand+idx,"off",3) == 0)
       {
 
-        // verify LED mode
+        // disable interrupts to avoid LED changes based on interrupt
         //
-        if (FlashMode != LED)
-        {
-          // should be at least two tokens...
-          Serial.println("[ERROR: not in LED flash mode]");
-          return;
-        }
-
-        // if LED already OFF, do nothing
-        //
-        if (!LED_ON)
-        {
-          return;
-        }
-
-        // disable interrupts
         sReg = SREG;
         noInterrupts();
 
-        // turn OFF LED 
+        // if LED already OFF, do nothing
         //
-        OCR2A = OCR2B = 0;
-        LED_ON = false;
+        if (LED_ON)
+        {
 
-        // log time flash went off
-        //
-        tk_LED = GetTicks(CNT4);              // time LED turned OFF
+          // turn OFF LED 
+          //
+          OCR2A = OCR2B = 0;
+          LED_ON = false;
 
-        ultohexA(logFlashON + offset_logFlashON,tk_LED);
-        LogTextWrite(logFlashON,len_logFlashON);
+          // log time flash went off
+          //
+          tk_LED = GetTicks(CNT4);              // time LED turned OFF
+
+          ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
+          LogTextWrite(logFlashFINAL,len_logFlashFINAL);
+          
+        }
 
         // reenable interrupts
         //
-        SREG = sReg;              // back on again
+        SREG = sReg;              // reenable interrupts again
 
         Serial.println(strDONE);
         return;
