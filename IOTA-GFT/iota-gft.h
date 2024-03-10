@@ -42,13 +42,15 @@
   // Flashing Modes
   //  PPS mode => flash on PPS signal for X whole seconds
   //	EXP mode => short duration flashes on EXP interrupt (exposure signal)
+  //  LED mode => manual control of LED
   //
   //	fEventDefined => True if an future event definition active
   //
   enum FlashingMode
   {
     PPS,
-    EXP
+    EXP,
+    LED
   };
   extern volatile FlashingMode FlashMode;		// current flashing mode
 

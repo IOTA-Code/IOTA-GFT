@@ -1065,7 +1065,7 @@ void setup()
   digitalWrite(LED_BUILTIN, LOW);
   
   pinMode(PPS_PIN,INPUT);                    // ICP4 = pin 49 as input
-  pinMode(EXP_PIN,INPUT);                    // ICP5 = pin 48 as input
+  pinMode(EXP_PIN,INPUT_PULLUP);             // ICP5 = pin 48 as input WITH PULL-UP 
 
   // setup LED driver circuit
   //
