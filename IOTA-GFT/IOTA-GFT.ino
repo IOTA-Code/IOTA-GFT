@@ -807,13 +807,6 @@ ISR( TIMER5_CAPT_vect)
   //
   tk_EXP = GetTicks(IC5);
 
-  //*****************
-  //  DISABLE FURTHER EXP interrpts at ICP pin and ENABLE system interrupts
-  //  *** WARNING - RE-ENABLE these interrupts before leaving this ISR
-  //
-  TIMSK5 &= ~(1 << ICIE5);    // turn off ICP for timer 5 => no more EXP interrupts
-  interrupts();               // enable interrupts again
-
   // Is an EXP flash sequence currently active?
   //
   blnLogFlash = false;
@@ -866,6 +859,13 @@ ISR( TIMER5_CAPT_vect)
     
 
   }
+
+  //*****************
+  //  DISABLE FURTHER EXP interrpts at ICP pin and ENABLE system interrupts
+  //  *** WARNING - RE-ENABLE these interrupts before leaving this ISR
+  //
+  TIMSK5 &= ~(1 << ICIE5);    // turn off ICP for timer 5 => no more EXP interrupts
+  interrupts();               // enable interrupts again
 
   // logging - EXP time and (optional) flash time
   //
