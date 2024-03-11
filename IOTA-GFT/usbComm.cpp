@@ -256,9 +256,9 @@ void ReadCMD()
     //
     if (bIn == '\n')
     {
-      strCommand[Cmd_Next] = 0;
-      Cmd_Next = -1;
-      break;
+      strCommand[Cmd_Next] = 0;   // end of a command
+      Cmd_Next = -Cmd_Next;       // set to negative length value
+      break;                      // and exit serial read loop to process command
     }
     else if (bIn != '\r')
     {
@@ -277,10 +277,18 @@ void ReadCMD()
   //
   if (Cmd_Next < 0)
   {
+    int Cmd_Length = -Cmd_Next;     // length of this command
 
     // get ready for next command
     //
     Cmd_Next = 0;
+
+    // nothing there?
+    //
+    if (Cmd_Length == 0)
+    {
+      return;     // do nothing
+    }
 
     // first check to see if this is a "null" command
     //
@@ -293,11 +301,44 @@ void ReadCMD()
 
     // ECHO command string to USB port
     //    
-
     strcpy(strResponse,"[CMD ");
     strcpy(strResponse+5,strCommand);
     strcat(strResponse,"]");
     SendResponse();
+
+    // check for checksum in form *XX at end of sentence
+    //
+    if (Cmd_Length >= 3)
+    {
+      //  if * char in expected position, assume checksum is present and verify it
+      //
+      if (strCommand[Cmd_Length-3] == '*')
+      {
+        byte chk;
+
+        // compute checksum of previous chars
+        //
+        chk = chksum_b(strCommand,Cmd_Length-3);      // compute checksum of command
+        btohexA(strChk+1, chk);
+
+        // does it match value in command string?
+        //
+        if (!(strCommand[Cmd_Length-2] == strChk[1]) || !(strCommand[Cmd_Length-1] == strChk[2]))
+        {
+          Serial.println("[ERROR: checksum error.]*3F");
+        }
+
+        // checksum passed.  Now remove the checksum
+        //
+        Cmd_Length -= 3;
+        strCommand[Cmd_Length] = 0;   // null-terminate it
+        if (Cmd_Length == 0)
+        {
+          return;     // do nothing on empty command
+        }
+
+      }
+    }
 
     // finds tokens in the command line
     //
