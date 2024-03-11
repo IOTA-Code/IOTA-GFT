@@ -29,10 +29,20 @@ char idxToken[10];                    // starting index of tokens in command str
 int lenToken[10];                     // length of the non-blank chars in this token
 int tokenCount;                       // # of tokens in string
 
-  // Flash settings
+//
+// Flash settings
+//
 int Flash_Duration_Sec = 5;       // duration of one LED "flash" in seconds
 int Pulse_Count = 5;              // # of pulses in EXP sequence
-char strDONE[] = "[DONE]";
+
+// command response
+//
+#define ResponseSize 120
+char strResponse[ ResponseSize ];    // null terminated response to a command
+
+char strChk[4] = "*XX";
+char strDONE[] = "[DONE]*06";   // fixed string response
+char strParseError[] = "[ERROR: unable to parse command.]*52";
 
 //===========================================================================================================
 //
@@ -143,6 +153,37 @@ void FindTokens()
 
 } // end of FindTokens
 
+//--------------------------------------------------------------------------------------
+//  SendResponse - output command response string to serial port (adding checksum and \r\n)
+//
+//--------------------------------------------------------------------------------------
+void SendResponse()
+{
+  int len;
+  byte chk;
+  char *cptr;
+
+  len = strlen(strResponse);
+
+  // check bounds of response array
+  //
+  if ((len <= 0) || (len > (ResponseSize - 4)))
+  {
+    return;
+  }
+
+  chk = chksum_b(strResponse,len);  // get checksum of response string
+
+  cptr = strResponse + len;
+  *cptr = '*';
+  cptr++;
+  btohexA(cptr, chk); // add the checksum chars
+  cptr[2] = 0;        // null terminate after the two checksum chars
+
+  Serial.println(strResponse);
+
+} // end of SendResponse
+
 //===========================================================================================================
 //
 //   MANUAL OPERATIONS FUNCTIONS
@@ -252,9 +293,11 @@ void ReadCMD()
 
     // ECHO command string to USB port
     //    
-    Serial.print("[CMD ");
-    Serial.print(strCommand);
-    Serial.print("]\r\n");
+
+    strcpy(strResponse,"[CMD ");
+    strcpy(strResponse+5,strCommand);
+    strcat(strResponse,"]");
+    SendResponse();
 
     // finds tokens in the command line
     //
@@ -283,9 +326,10 @@ void ReadCMD()
     //
     if (strncmp(strCommand+idx,"device", 6) == 0)
     {
-      Serial.print("[");
-      Serial.print(strDeviceName);
-      Serial.println("]");
+      strcpy(strResponse,"[");
+      strcat(strResponse,strDeviceName);
+      strcat(strResponse,"]");
+      SendResponse();
       return;
     }   // end of version command
 
@@ -293,9 +337,10 @@ void ReadCMD()
     //
     else if (strncmp(strCommand+idx,"version", 7) == 0)
     {
-      Serial.print("[");
-      Serial.print(strVersion);
-      Serial.println("]");
+      strcpy(strResponse,"[");
+      strcat(strResponse,strVersion);
+      strcat(strResponse,"]");
+      SendResponse();
       return;
     }   // end of version command
 
@@ -303,26 +348,27 @@ void ReadCMD()
     //
     else if (strncmp(strCommand+idx,"status", 6) == 0)
     {
-      Serial.print("[");
+      strcpy(strResponse,"[");
       switch(DeviceMode)
       {
         case InitMode :
-          Serial.print("InitMode");
+          strcat(strResponse,"InitMode");
           break;
         case WaitingForGPS :
-          Serial.print("WaitingForGPS");
+          strcat(strResponse,"WaitingForGPS");
           break;
         case TimeValid :
-          Serial.print("TimeValid");
+          strcat(strResponse,"TimeValid");
           break;
         case Syncing :
-          Serial.print("Syncing");
+          strcat(strResponse,"Syncing");
           break;
         case FatalError :
-          Serial.print("FatalError");
+          strcat(strResponse,"FatalError");
           break;
       }
-      Serial.println("]");      
+      strcat(strResponse,"]");
+      SendResponse();
       return;
 
     }   // end of mode command
@@ -340,7 +386,7 @@ void ReadCMD()
       if (tokenCount < 2)
       {
         // should be at least two tokens...
-        Serial.println("[ERROR: unable to parse command.]");
+        Serial.println(strParseError);
         return;
       }
 
@@ -363,9 +409,10 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // Get duration value
-          Serial.print("[flash duration: ");
-          Serial.print(Flash_Duration_Sec);
-          Serial.println("]");
+          strcpy(strResponse,"[flash duration: ");
+          itoa(Flash_Duration_Sec,strResponse+17,10);
+          strcat(strResponse,"]");
+          SendResponse();
           return;
         }
 
@@ -379,7 +426,7 @@ void ReadCMD()
         lTmp = atol(strCommand+idx);
         if (lTmp <= 0)
         {
-          Serial.println("[ERROR: unable to parse command.]");
+          Serial.println(strParseError);
           return;
         }
 
@@ -395,7 +442,8 @@ void ReadCMD()
         }
         else
         {
-          Serial.println("[ERROR: unknown flash mode.]");
+          strcpy(strResponse,"[ERROR: unknown flash mode.]");
+          SendResponse();
         }
         Serial.println(strDONE);
         return;
@@ -410,9 +458,10 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // Get level value
-          Serial.print("[flash level: ");
-          Serial.print(flashlevel);
-          Serial.println("]");
+          strcpy(strResponse,"[flash level: ");
+          itoa(flashlevel,strResponse+14,10);
+          strcat(strResponse,"]");
+          SendResponse();
           return;
         }
 
@@ -426,12 +475,13 @@ void ReadCMD()
         lTmp = atol(strCommand+idx);
         if (lTmp <= 0)
         {
-          Serial.println("[ERROR: unable to parse command.]");
+          Serial.println(strParseError);
           return;
         }
         else if ((lTmp < 0) || (lTmp > 255))
         {
-          Serial.println("[ERROR: flashlevel not in range (0,255).]");
+          strcpy(strResponse,"[ERROR: flashlevel not in range (0,255).]");
+          SendResponse();
         }
 
         // set the value
@@ -462,9 +512,10 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // Get range value
-          Serial.print("[flash range: ");
-          Serial.print(flashrange);
-          Serial.println("]");
+          strcpy(strResponse,"[flash range: ");
+          itoa(flashrange,strResponse+14,10);
+          strcat(strResponse,"]");
+          SendResponse();
           return;
         }
 
@@ -479,23 +530,26 @@ void ReadCMD()
         {
           flashrange = 0;
           setLEDtoLowRange();
-          Serial.println("[low range]");
+          strcpy(strResponse,"[low range]");
+          SendResponse();
         }
         else if (strCommand[idx] == '1')
         {
           flashrange = 1;
           setLEDtoMidRange();
-          Serial.println("[mid range]");
+          strcpy(strResponse,"[mid range]");
+          SendResponse();
         }
         else if (strCommand[idx] == '2')
         {
           flashrange = 2;
           setLEDtoHighRange();
-          Serial.println("[high range]");
+          strcpy(strResponse,"[high range]");
+          SendResponse();
         }
         else
         {
-          Serial.println("[ERROR: unable to parse command.]");
+          Serial.println(strParseError);
           return;
         }
 
@@ -513,17 +567,20 @@ void ReadCMD()
           // Get mode value
           if (FlashMode == PPS)
           {
-            Serial.println("[PPS flash mode.]");
+            strcpy(strResponse,"[PPS flash mode.]");
+            SendResponse();
             return;
           }
           else if (FlashMode == EXP)
           {
-            Serial.println("[EXP flash mode.]");
+            strcpy(strResponse,"[EXP flash mode.]");
+            SendResponse();
             return;
           }
           else
           {
-            Serial.println("[ERROR: Unknown flash mode!]");
+            strcpy(strResponse,"[ERROR: Unknown flash mode!]");
+            SendResponse();
             return;
           }
           return;
@@ -546,7 +603,7 @@ void ReadCMD()
         }
         else
         {
-          Serial.println("[ERROR: unable to parse command.]");
+          Serial.println(strParseError);
           return;
         }
 
@@ -555,7 +612,8 @@ void ReadCMD()
 
       else
       {
-        Serial.println("[ERROR: unknown command.]");
+        strcpy(strResponse,"[ERROR: unknown command.]");
+        SendResponse();
         return;
       }
 
@@ -576,7 +634,7 @@ void ReadCMD()
       if (tokenCount < 2)
       {
         // should be at least three tokens...
-        Serial.println("[ERROR: unable to parse command.]");
+        Serial.println(strParseError);
         return;
       }
 
@@ -588,9 +646,10 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // Get level value
-          Serial.print("[pulse duration (us): ");
-          Serial.print(pulse_duration_us);
-          Serial.println("]");
+          strcpy(strResponse,"[pulse duration (us): ");
+          itoa(pulse_duration_us,strResponse+22,10);
+          strcat(strResponse,"]");
+          SendResponse();
           return;
         }
 
@@ -604,7 +663,7 @@ void ReadCMD()
         lTmp = atol(strCommand+idx);
         if (lTmp <= 0)
         {
-          Serial.println("[ERROR: unable to parse command.]");
+          Serial.println(strParseError);
           return;
         }
 
@@ -622,9 +681,10 @@ void ReadCMD()
         if (tokenCount < 3)
         {
           // Get level value
-          Serial.print("[pulse interval (ms): ");
-          Serial.print(pulse_interval);
-          Serial.println("]");
+          strcpy(strResponse,"[pulse interval: ");
+          itoa(pulse_interval,strResponse+17,10);
+          strcat(strResponse,"]");
+          SendResponse();
           return;
         }
 
@@ -638,7 +698,7 @@ void ReadCMD()
         lTmp = atol(strCommand+idx);
         if (lTmp <= 0)
         {
-          Serial.println("[ERROR: unable to parse command.]");
+          Serial.println(strParseError);
           return;
         }
 
@@ -669,7 +729,7 @@ void ReadCMD()
       if (tokenCount < 2)
       {
         // should be at least two tokens...
-        Serial.println("[ERROR: unable to parse command.]");
+        Serial.println(strParseError);
         return;
       }
 
@@ -770,7 +830,7 @@ void ReadCMD()
       if (tokenCount < 2)
       {
         // should be at least two tokens...
-        Serial.println("[ERROR: unable to parse command.]");
+        Serial.println(strParseError);
         return;
       }
 
@@ -799,7 +859,7 @@ void ReadCMD()
 
       else
       {
-        Serial.println("[ERROR unable to parse command.]");
+        Serial.println(strParseError);
         return;
       }
 
@@ -807,7 +867,8 @@ void ReadCMD()
 
     else
     {
-      Serial.println("[ERROR unknown command.]");
+      strcpy(strResponse,"[ERROR: unknown command.]");
+      SendResponse();
       return;
     } // end of command options
 
