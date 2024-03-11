@@ -210,6 +210,14 @@ int chksum_logERROR = 13;
 //
 //  INTERRUPT SERVICE ROUTINES
 //
+//    Timer 3
+//      output compare for LED pulse duration
+//    Timer 4
+//      input capture for PPS logging
+//      overflow for tracking clock count
+//    Timer 5
+//      input capture for EXP logging
+//      overflow for tracking clock count
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
@@ -278,7 +286,13 @@ ISR( TIMER4_CAPT_vect)
   bool blnLogFlashON = false;
   bool blnLogFlashOFF = false;
   byte chk;
- 
+
+  
+  //************************
+  // Get TIME of PPS event from input capture register
+  //
+  timeCurrent = GetTicks(IC4);
+
   //*****************
   //  If init mode or FatalError, just leave...
   //
@@ -287,6 +301,13 @@ ISR( TIMER4_CAPT_vect)
     // do nothing in these modes
     return;
   }
+
+  //*****************
+  //  DISABLE FURTHER PPS interrpts at ICP pin and ENABLE system interrupts
+  //  *** WARNING - RE-ENABLE these interrupts before leaving this ISR
+  //
+  TIMSK4 &= ~(1 << ICIE4);    // turn off ICP for timer 4 => no more PPS interrupts
+  interrupts();               // enable interrupts again
 
   // Check for start/end of LED pulse in PPS mode
   //
@@ -354,11 +375,6 @@ ISR( TIMER4_CAPT_vect)
     } // end of LED status update
 
   } // end of check for PPS flash mode
-  
-  //************************
-  // Get TIME of PPS event from input capture register
-  //
-  timeCurrent = GetTicks(IC4);
 
 
   //************************************
@@ -529,6 +545,7 @@ ISR( TIMER4_CAPT_vect)
 
           // leave PPS interrupt routine now... 
           //
+          TIMSK4 |= (1 << ICIE4);   // RE-ENBALE PPS interrupts first!
           return;
         }
 
@@ -554,11 +571,13 @@ ISR( TIMER4_CAPT_vect)
     if ((!gpsRMC.valid) || (!gpsPUBX04.valid))
     {
       // no valid RMC or PUBX04, keep waiting
+      TIMSK4 |= (1 << ICIE4);   // RE-ENBALE PPS interrupts first!
       return;
     }
     else if (gpsRMC.status != 'A')
     {
       // wait for a good fix
+      TIMSK4 |= (1 << ICIE4);   // RE-ENBALE PPS interrupts first!
       return;
     }
     else
@@ -675,6 +694,7 @@ ISR( TIMER4_CAPT_vect)
       LogTextWrite(logERROR,len_logERROR);
 
       // and done with this PPS logic
+      TIMSK4 |= (1 << ICIE4);   // RE-ENBALE PPS interrupts first!
       return;
     }
     
@@ -753,7 +773,10 @@ ISR( TIMER4_CAPT_vect)
     
   }  // end of check for current mode
 
-  
+  // all done with PPS capture interrupt
+  //
+  TIMSK4 |= (1 << ICIE4);   // RE-ENBALE PPS interrupts before leaving
+
 } // end of PPS/Timer4 input capture interrupt
 
 //========================================
@@ -779,6 +802,13 @@ ISR( TIMER5_CAPT_vect)
   // get current time and save it to the event buffer
   //
   tk_EXP = GetTicks(IC5);
+
+  //*****************
+  //  DISABLE FURTHER EXP interrpts at ICP pin and ENABLE system interrupts
+  //  *** WARNING - RE-ENABLE these interrupts before leaving this ISR
+  //
+  TIMSK5 &= ~(1 << ICIE5);    // turn off ICP for timer 5 => no more EXP interrupts
+  interrupts();               // enable interrupts again
 
   // Is an EXP flash sequence currently active?
   //
@@ -848,7 +878,15 @@ ISR( TIMER5_CAPT_vect)
       LogTextWrite(logFlashON,len_logFlashON);
 
   }
-  
+
+  // all done with EXP capture ISR
+  //    - optionally re-enable capture for EXP
+  if (blnLogEXP)
+  {
+    TIMSK5 |= (1 << ICIE5);   // RE-ENBALE EXP interrupts! 
+  }
+
+
 } // end of Timer5 input capture interrupt
 
 
@@ -1201,7 +1239,7 @@ void setup()
   //  Init timers
   //	  Timer 2 - PWM for LED
   //    Timer 3 - LED pulse duration
-  //    Timer 4 - 1pps logging
+  //    Timer 4 - PPS logging
   //    Timer 5 - exposure marker logging
   //  
 
@@ -1278,16 +1316,12 @@ void setup()
   TCNT5 = 0;        // timer5: reset count
   timer5_ov = 0;    // timer5: reser overflow count
   TIFR5 = 0;        // timer5: reset all pending interrupts
+  TIMSK5 = (1 << TOIE5);   // timer 5: turn on overflow interrupts
 
+      // optionally turn on ICP capture
   if (blnLogEXP)
   {
-    TIMSK5 = (1 << ICIE5) | (1 << TOIE5);   // timer 5: turn on IC capture and overflow interrupts
-  }
-  else
-  {
-    // if no EXP logging, disable this interrupt
-    //
-    TIMSK5 = (1 << TOIE5);       // turn on OVERFLOW interrupt only
+    TIMSK5 |= (1 << ICIE5);   // timer 5: turn on IC capture 
   }
 
   // Timers begin...
