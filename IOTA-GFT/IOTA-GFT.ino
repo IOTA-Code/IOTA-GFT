@@ -234,13 +234,17 @@ ISR(TIMER3_COMPA_vect)
   OCR2A = OCR2B = 0;
   LED_ON = false;
 
+  // log time flash went off
+  //
+  tk_LED = GetTicks(CNT4);              // time LED turned OFF
+
   // turn OFF Timer 3
   //
   TCCR3B = (1 << WGM32);    // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
 
-  // log time flash went off
+  // re-enable interrupts now
   //
-  tk_LED = GetTicks(CNT4);              // time LED turned OFF
+  interrupts();
 
   if (pulse_countdown == 0)
   {
