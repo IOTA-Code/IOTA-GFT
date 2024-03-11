@@ -55,7 +55,7 @@ int EXP_PIN = 48;           // EXP signal input from camera
 //  VERSION
 //
 const char *strDeviceName = "IOTA-GFT";
-const char *strVersion = "v2024-03-10-2";
+const char *strVersion = "v2024-03-11-1";
 
 volatile OperatingMode DeviceMode;    // current operating mode
 volatile bool blnReportMode;          // true => report current mode in log (enabled with each NMEA set)
