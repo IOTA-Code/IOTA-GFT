@@ -70,6 +70,10 @@ struct data_t {
   uint8_t comma;
 };
 
+// command response
+//
+#define ResponseSize 120
+char strResponse[ ResponseSize ];    // null terminated response to a command
 
 //=========================================================
 //
@@ -77,14 +81,37 @@ struct data_t {
 //
 //=========================================================
 
-//------------------------------------------
-//  errorHalt - print error message and halt
-//-----------------------------------------
-void errorHalt(char *strMessage)
+
+//--------------------------------------------------------------------------------------
+//  SendResponse - output command response string to serial port (adding checksum and \r\n)
+//
+//--------------------------------------------------------------------------------------
+void SendResponse()
 {
-  Serial.println(strMessage);
-  while(1);             // hang!
-}
+  int len;
+  byte chk;
+  char *cptr;
+
+  len = strlen(strResponse);
+
+  // check bounds of response array
+  //
+  if ((len <= 0) || (len > (ResponseSize - 4)))
+  {
+    return;
+  }
+
+  chk = chksum_b(strResponse,len);  // get checksum of response string
+
+  cptr = strResponse + len;
+  *cptr = '*';
+  cptr++;
+  btohexA(cptr, chk); // add the checksum chars
+  cptr[2] = 0;        // null terminate after the two checksum chars
+
+  Serial.println(strResponse);
+
+} // end of SendResponse
 
 
 //---------------------------------------------

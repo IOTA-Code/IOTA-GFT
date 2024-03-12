@@ -55,7 +55,7 @@ int EXP_PIN = 48;           // EXP signal input from camera
 //  VERSION
 //
 const char *strDeviceName = "IOTA-GFT";
-const char *strVersion = "v2024-03-11-1";
+const char *strVersion = "v2024-03-12-1";
 
 volatile OperatingMode DeviceMode;    // current operating mode
 volatile bool blnReportMode;          // true => report current mode in log (enabled with each NMEA set)
@@ -1224,7 +1224,7 @@ void setup()
   //
   //
   Serial.begin(250000);
-  Serial.println("[STARTING!]");
+  Serial.println("[STARTING!]*27");
 
   // 9600 NMEA is the default rate for the ublox GPS
   //
@@ -1235,7 +1235,7 @@ void setup()
   //
   if (!gpsCommInit())
   {
-    Serial.print("[FATAL error initializing GPS.]");
+    Serial.print("[FATAL error initializing GPS.]*67");
   }
  
 

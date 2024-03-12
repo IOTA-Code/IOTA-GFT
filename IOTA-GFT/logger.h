@@ -40,6 +40,9 @@ extern block_t fifoBuffer[];      // allocate buffer space
   //******************
   // function prototypes
   //
+  extern void SendResponse();
+  extern char strResponse[ ];    // null terminated response to a command
+
   extern bool LogTextWrite(char *, int);
   extern bool LogFlushFull();
   extern bool LogFlushAll();

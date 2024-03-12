@@ -35,10 +35,6 @@ int tokenCount;                       // # of tokens in string
 int Flash_Duration_Sec = 5;       // duration of one LED "flash" in seconds
 int Pulse_Count = 5;              // # of pulses in EXP sequence
 
-// command response
-//
-#define ResponseSize 120
-char strResponse[ ResponseSize ];    // null terminated response to a command
 
 char strChk[4] = "*XX";
 char strDONE[] = "[DONE]*06";   // fixed string response
@@ -152,37 +148,6 @@ void FindTokens()
   return;
 
 } // end of FindTokens
-
-//--------------------------------------------------------------------------------------
-//  SendResponse - output command response string to serial port (adding checksum and \r\n)
-//
-//--------------------------------------------------------------------------------------
-void SendResponse()
-{
-  int len;
-  byte chk;
-  char *cptr;
-
-  len = strlen(strResponse);
-
-  // check bounds of response array
-  //
-  if ((len <= 0) || (len > (ResponseSize - 4)))
-  {
-    return;
-  }
-
-  chk = chksum_b(strResponse,len);  // get checksum of response string
-
-  cptr = strResponse + len;
-  *cptr = '*';
-  cptr++;
-  btohexA(cptr, chk); // add the checksum chars
-  cptr[2] = 0;        // null terminate after the two checksum chars
-
-  Serial.println(strResponse);
-
-} // end of SendResponse
 
 //===========================================================================================================
 //

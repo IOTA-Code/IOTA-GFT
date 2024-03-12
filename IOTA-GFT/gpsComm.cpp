@@ -1045,9 +1045,10 @@ bool gpsCommInit()
   retVal = ubxInit();
   if (retVal > 0)
   {
-    Serial.print("[ERROR initializing GPS module : ");
-    Serial.print(retVal);
-    Serial.println("]");
+    strcpy(strResponse,"[ERROR initializing GPS module : ");
+    itoa(retVal,strResponse+13,10);
+    strcat(strResponse,"]");
+    SendResponse();
     return( false );
   }
 
