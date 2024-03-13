@@ -55,7 +55,7 @@ int EXP_PIN = 48;           // EXP signal input from camera
 //  VERSION
 //
 const char *strDeviceName = "IOTA-GFT";
-const char *strVersion = "v2024-03-12-1";
+const char *strVersion = "v2024-03-12-2";
 
 volatile OperatingMode DeviceMode;    // current operating mode
 volatile bool blnReportMode;          // true => report current mode in log (enabled with each NMEA set)
@@ -242,6 +242,8 @@ ISR(TIMER3_COMPA_vect)
   //
   TCCR3B = (1 << WGM32);    // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
 
+  // note: interrupts are still disabled, so no issue with logging
+  //
   if (pulse_countdown == 0)
   {
     ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
@@ -378,7 +380,7 @@ ISR( TIMER4_CAPT_vect)
 
   //*****************
   //  DISABLE FURTHER PPS interrpts at ICP pin and ENABLE system interrupts
-  //  *** WARNING - RE-ENABLE these interrupts before leaving this ISR
+  //  *** WARNING - RE-ENABLE the PPS interrupts before leaving this ISR
   //
   TIMSK4 &= ~(1 << ICIE4);    // turn off ICP for timer 4 => no more PPS interrupts
   interrupts();               // enable interrupts again
