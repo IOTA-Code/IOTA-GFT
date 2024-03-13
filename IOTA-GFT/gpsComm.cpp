@@ -903,9 +903,11 @@ int ReadGPS()
         //   NOTE: interrupts are enabled so this sentence could be "interrupted"
         //          by a PPS or EXP log event
         //
+        noInterrupts();                                 // disallow interruption of this sentence in the log
         LogTextWrite(nmeaTime,10);
         LogTextWrite(nmeaSentence,nmeaCount-2);
         LogTextWrite(nmeaEnd,len_nmeaEnd);
+        interrupts();
 
         // call the parser
         //

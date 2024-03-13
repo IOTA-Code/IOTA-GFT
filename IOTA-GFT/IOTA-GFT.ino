@@ -242,10 +242,6 @@ ISR(TIMER3_COMPA_vect)
   //
   TCCR3B = (1 << WGM32);    // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
 
-  // re-enable interrupts now
-  //
-  interrupts();
-
   if (pulse_countdown == 0)
   {
     ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
@@ -305,13 +301,6 @@ ISR( TIMER4_CAPT_vect)
     // do nothing in these modes
     return;
   }
-
-  //*****************
-  //  DISABLE FURTHER PPS interrpts at ICP pin and ENABLE system interrupts
-  //  *** WARNING - RE-ENABLE these interrupts before leaving this ISR
-  //
-  TIMSK4 &= ~(1 << ICIE4);    // turn off ICP for timer 4 => no more PPS interrupts
-  interrupts();               // enable interrupts again
 
   // Check for start/end of LED pulse in PPS mode
   //
@@ -380,6 +369,19 @@ ISR( TIMER4_CAPT_vect)
 
   } // end of check for PPS flash mode
 
+  // log the PPS time
+  //
+  ultohexA(logPPS + offset_logPPS,tk_PPS);
+  chk = chksum_b(logPPS,chksum_logPPS-1);   // compute checksum
+  btohexA(logPPS + chksum_logPPS, chk);
+  LogTextWrite(logPPS,len_logPPS);
+
+  //*****************
+  //  DISABLE FURTHER PPS interrpts at ICP pin and ENABLE system interrupts
+  //  *** WARNING - RE-ENABLE these interrupts before leaving this ISR
+  //
+  TIMSK4 &= ~(1 << ICIE4);    // turn off ICP for timer 4 => no more PPS interrupts
+  interrupts();               // enable interrupts again
 
   //************************************
   //  Validate PPS interval
@@ -390,13 +392,6 @@ ISR( TIMER4_CAPT_vect)
   //
   timePrev = tk_PPS;
   tk_PPS = timeCurrent;
-
-  // log the PPS time
-  //
-  ultohexA(logPPS + offset_logPPS,tk_PPS);
-  chk = chksum_b(logPPS,chksum_logPPS-1);   // compute checksum
-  btohexA(logPPS + chksum_logPPS, chk);
-  LogTextWrite(logPPS,len_logPPS);
 
   // delay from last PPS
   //
@@ -428,7 +423,9 @@ ISR( TIMER4_CAPT_vect)
       ustohexA(logERROR + offset_logERROR,err_pps_interval_clock);
       chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
       btohexA(logERROR + chksum_logERROR, chk);
+      noInterrupts();                                 // disallow interruption of this sentence in the log
       LogTextWrite(logERROR,len_logERROR);
+      interrupts();
 
       // sync error - restart sync
       //
@@ -451,8 +448,9 @@ ISR( TIMER4_CAPT_vect)
       ustohexA(logERROR + offset_logERROR,err_pps_interval_tolerance);
       chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
       btohexA(logERROR + chksum_logERROR, chk);
+      noInterrupts();   // disallow interruption of this sentence in the log
       LogTextWrite(logERROR,len_logERROR);
-
+      interrupts();
       // sync error - restart sync
       //
       DeviceMode = WaitingForGPS;
@@ -470,13 +468,17 @@ ISR( TIMER4_CAPT_vect)
   //
   if (blnLogFlashON)
   {
+    noInterrupts();                                 // disallow interruption of this sentence in the log
     LogTextWrite(logFlashON,len_logFlashON);
+    interrupts();
     blnLogFlashON = false;
   }
   if (blnLogFlashOFF)
   {
+    noInterrupts();                                 // disallow interruption of this sentence in the log
     LogTextWrite(logFlashFINAL,len_logFlashFINAL);
     blnLogFlashOFF = false;
+    interrupts();
   }
 
 
@@ -545,7 +547,9 @@ ISR( TIMER4_CAPT_vect)
           ustohexA(logERROR + offset_logERROR,err_rmc_time);
           chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
           btohexA(logERROR + chksum_logERROR, chk);
+          noInterrupts();                                 // disallow interruption of this sentence in the log
           LogTextWrite(logERROR,len_logERROR);
+          interrupts();
 
           // leave PPS interrupt routine now... 
           //
@@ -695,7 +699,9 @@ ISR( TIMER4_CAPT_vect)
       ustohexA(logERROR + offset_logERROR,ErrorFound);
       chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
       btohexA(logERROR + chksum_logERROR, chk);
+      noInterrupts();                                 // disallow interruption of this sentence in the log
       LogTextWrite(logERROR,len_logERROR);
+      interrupts();
 
       // and done with this PPS logic
       TIMSK4 |= (1 << ICIE4);   // RE-ENBALE PPS interrupts first!
@@ -773,7 +779,9 @@ ISR( TIMER4_CAPT_vect)
       ustohexA(logERROR + offset_logERROR,err_invalidMode);
       chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
       btohexA(logERROR + chksum_logERROR, chk);
+      noInterrupts();                                 // disallow interruption of this sentence in the log
       LogTextWrite(logERROR,len_logERROR);
+      interrupts();
     
   }  // end of check for current mode
 
@@ -860,14 +868,8 @@ ISR( TIMER5_CAPT_vect)
 
   }
 
-  //*****************
-  //  DISABLE FURTHER EXP interrpts at ICP pin and ENABLE system interrupts
-  //  *** WARNING - RE-ENABLE these interrupts before leaving this ISR
-  //
-  TIMSK5 &= ~(1 << ICIE5);    // turn off ICP for timer 5 => no more EXP interrupts
-  interrupts();               // enable interrupts again
-
   // logging - EXP time and (optional) flash time
+  //   NOTE: interrupts are still off, so no risk to the logging
   //
   ultohexA(logEXP + offset_logEXP,tk_EXP);
   chk = chksum_b(logEXP,chksum_logEXP-1);   // compute checksum
@@ -881,13 +883,6 @@ ISR( TIMER5_CAPT_vect)
       btohexA(logFlashON + chksum_logFlashON, chk);
       LogTextWrite(logFlashON,len_logFlashON);
 
-  }
-
-  // all done with EXP capture ISR
-  //    - optionally re-enable capture for EXP
-  if (blnLogEXP)
-  {
-    TIMSK5 |= (1 << ICIE5);   // RE-ENBALE EXP interrupts! 
   }
 
 
@@ -1378,7 +1373,9 @@ void loop()                     // run over and over again
     ustohexA(logERROR + offset_logERROR,retVal);
     chk = chksum_b(logERROR,chksum_logERROR-1);   // compute checksum
     btohexA(logERROR + chksum_logERROR, chk);
+    noInterrupts();                                 // disallow interruption of this sentence in the log
     LogTextWrite(logERROR,len_logERROR);
+    interrupts();
 
   }
   
@@ -1414,23 +1411,33 @@ void loop()                     // run over and over again
 
         chk = chksum_b(logModeTimeValid,chksum_logModeTimeValid-1);   // compute checksum
         btohexA(logModeTimeValid + chksum_logModeTimeValid, chk);
+        noInterrupts();                                 // disallow interruption of this sentence in the log
         LogTextWrite(logModeTimeValid,len_logModeTimeValid);
+        interrupts();
       }
       else if (DeviceMode == Syncing)
       {
+        noInterrupts();                                 // disallow interruption of this sentence in the log
         LogTextWrite(logModeSync,len_logModeSync);
+        interrupts();
       }
       else if (DeviceMode == WaitingForGPS)
       {
+        noInterrupts();                                 // disallow interruption of this sentence in the log
         LogTextWrite(logModeWaitingForGPS,len_logModeWaitingForGPS);
+        interrupts();
       }
       else if (DeviceMode == FatalError)
       {
+        noInterrupts();                                 // disallow interruption of this sentence in the log
         LogTextWrite(logModeFatal,len_logModeFatal);
+        interrupts();
       }
       else if (DeviceMode == InitMode)
       {
+        noInterrupts();                                 // disallow interruption of this sentence in the log
         LogTextWrite(logModeInit,len_logModeInit);
+        interrupts();
       }
       blnReportMode = false;      // turn OFF until next NMEA set
   }

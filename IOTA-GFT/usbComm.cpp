@@ -727,7 +727,6 @@ void ReadCMD()
     {
       // "led" command
       //
-      unsigned int sReg;
       unsigned long tk_LED;
 
       // parse second token 
@@ -747,16 +746,16 @@ void ReadCMD()
       if (strncmp(strCommand+idx,"on",2) == 0)
       {
 
-        // disable interrupts to ensure LED state does not change based on interrupt
-        //
-        sReg = SREG;
-        noInterrupts();
 
         // if LED OFF, turn it ON
         //
         if (!LED_ON)
         {
           byte chk;
+
+          // disable interrupts to ensure accurate time for LED ON
+          //
+          noInterrupts();
           
           // turn on LED
           //
@@ -770,11 +769,11 @@ void ReadCMD()
           chk = chksum_b(logFlashON,chksum_logFlashON-1);   // compute checksum
           btohexA(logFlashON + chksum_logFlashON, chk);
           LogTextWrite(logFlashON,len_logFlashON);
-        }
 
-        // reenable interrupts
-        //
-        SREG = sReg;              // enable interrupts again
+          // interrupts back on again...
+          //
+          interrupts();
+        }
 
         Serial.println(strDONE);
         return;
@@ -786,16 +785,15 @@ void ReadCMD()
       else if (strncmp(strCommand+idx,"off",3) == 0)
       {
 
-        // disable interrupts to avoid LED changes based on interrupt
-        //
-        sReg = SREG;
-        noInterrupts();
-
         // if LED already OFF, do nothing
         //
         if (LED_ON)
         {
           byte chk;
+
+          // disable interrupts to ensure accurate time for LED OFF
+          //
+          noInterrupts();
 
           // turn OFF LED 
           //
@@ -811,11 +809,10 @@ void ReadCMD()
           btohexA(logFlashFINAL + chksum_logFlashFINAL, chk);
           LogTextWrite(logFlashFINAL,len_logFlashFINAL);
           
+          // interrupts back on again...
+          //
+          interrupts();
         }
-
-        // reenable interrupts
-        //
-        SREG = sReg;              // reenable interrupts again
 
         Serial.println(strDONE);
         return;
