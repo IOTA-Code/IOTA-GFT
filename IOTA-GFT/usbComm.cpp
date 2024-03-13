@@ -283,14 +283,17 @@ void ReadCMD()
 
         // compute checksum of previous chars
         //
-        chk = chksum_b(strCommand,Cmd_Length-3);      // compute checksum of command
+        chk = chksum_b(strCommand,Cmd_Length-3);      // compute checksum of command & convert to lowercase
         btohexA(strChk+1, chk);
+        strChk[1] = tolower(strChk[1]);
+        strChk[2] = tolower(strChk[2]);
 
         // does it match value in command string?
         //
         if (!(strCommand[Cmd_Length-2] == strChk[1]) || !(strCommand[Cmd_Length-1] == strChk[2]))
         {
           Serial.println("[ERROR: checksum error.]*3F");
+          return;
         }
 
         // checksum passed.  Now remove the checksum
