@@ -482,7 +482,7 @@ void ReadCMD()
         //  should work without null terminating the token...
         //
         lTmp = atol(strCommand+idx);
-        if (lTmp <= 0)
+        if (lTmp < 0)
         {
           Serial.println(strParseError);
           return;
