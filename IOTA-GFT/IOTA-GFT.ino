@@ -55,7 +55,7 @@ int EXP_PIN = 48;           // EXP signal input from camera
 //  VERSION
 //
 const char *strDeviceName = "IOTA-GFT";
-const char *strVersion = "v2024-03-14-01";
+const char *strVersion = "v2024-04-01-01";
 
 volatile OperatingMode DeviceMode;    // current operating mode
 volatile bool blnReportMode;          // true => report current mode in log (enabled with each NMEA set)
@@ -371,6 +371,11 @@ ISR( TIMER4_CAPT_vect)
 
   } // end of check for PPS flash mode
 
+  // save the previous value for compare
+  //
+  timePrev = tk_PPS;
+  tk_PPS = timeCurrent;
+
   // log the PPS time
   //
   ultohexA(logPPS + offset_logPPS,tk_PPS);
@@ -389,11 +394,6 @@ ISR( TIMER4_CAPT_vect)
   //  Validate PPS interval
   //    if too long or too short => Error Mode (PPS error)
   //   
-
-  // save the previous value for compare
-  //
-  timePrev = tk_PPS;
-  tk_PPS = timeCurrent;
 
   // delay from last PPS
   //
