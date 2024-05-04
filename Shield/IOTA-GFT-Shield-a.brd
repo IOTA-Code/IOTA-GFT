@@ -1104,22 +1104,22 @@ These rules have been curated by SparkFuns DFM commitee. After doing much resear
 <element name="R1" library="SparkFun-Resistors" package="AXIAL-0.3" value="1k" x="60.96" y="44.45" smashed="yes" rot="R180">
 <attribute name="NAME" x="60.96" y="43.434" size="0.6096" layer="25" font="vector" ratio="20" rot="R180" align="bottom-center"/>
 <attribute name="PROD_ID" value="RES-12182" x="60.96" y="44.45" size="1.778" layer="27" rot="R180" display="off"/>
-<attribute name="VALUE" x="60.96" y="45.466" size="0.6096" layer="27" font="vector" ratio="20" rot="R180" align="top-center"/>
+<attribute name="VALUE" x="60.96" y="45.466" size="0.6096" layer="25" font="vector" ratio="20" rot="R180" align="top-center"/>
 </element>
 <element name="R2" library="SparkFun-Resistors" package="AXIAL-0.3" value="220K" x="34.29" y="41.91" smashed="yes" rot="R90">
 <attribute name="NAME" x="33.274" y="41.91" size="0.6096" layer="25" font="vector" ratio="20" rot="R90" align="bottom-center"/>
 <attribute name="PROD_ID" value="RES-12182" x="34.29" y="41.91" size="1.778" layer="27" rot="R90" display="off"/>
-<attribute name="VALUE" x="35.306" y="41.91" size="0.6096" layer="27" font="vector" ratio="20" rot="R90" align="top-center"/>
+<attribute name="VALUE" x="35.306" y="41.91" size="0.6096" layer="25" font="vector" ratio="20" rot="R90" align="top-center"/>
 </element>
 <element name="R3" library="SparkFun-Resistors" package="AXIAL-0.3" value="150" x="24.13" y="41.91" smashed="yes" rot="R270">
 <attribute name="NAME" x="25.146" y="41.91" size="0.6096" layer="25" font="vector" ratio="20" rot="R270" align="bottom-center"/>
 <attribute name="PROD_ID" value="RES-12182" x="24.13" y="41.91" size="1.778" layer="27" rot="R270" display="off"/>
-<attribute name="VALUE" x="23.114" y="41.91" size="0.6096" layer="27" font="vector" ratio="20" rot="R270" align="top-center"/>
+<attribute name="VALUE" x="23.114" y="41.91" size="0.6096" layer="25" font="vector" ratio="20" rot="R270" align="top-center"/>
 </element>
 <element name="R4" library="SparkFun-Resistors" package="AXIAL-0.3" value="5.6K" x="57.15" y="38.1" smashed="yes">
 <attribute name="NAME" x="57.15" y="39.116" size="0.6096" layer="25" font="vector" ratio="20" align="bottom-center"/>
 <attribute name="PROD_ID" value=" " x="57.15" y="38.1" size="1.778" layer="27" display="off"/>
-<attribute name="VALUE" x="57.15" y="37.084" size="0.6096" layer="27" font="vector" ratio="20" align="top-center"/>
+<attribute name="VALUE" x="57.15" y="37.084" size="0.6096" layer="25" font="vector" ratio="20" align="top-center"/>
 </element>
 <element name="J9" library="SparkFun-Connectors" package="1X02" value="" x="72.39" y="41.91" smashed="yes" rot="R270">
 <attribute name="NAME" x="73.787" y="43.18" size="0.6096" layer="25" font="vector" ratio="20"/>
@@ -1139,7 +1139,7 @@ These rules have been curated by SparkFuns DFM commitee. After doing much resear
 </element>
 <element name="C1" library="sbp_misc" package="CAP-PTH-5MM" value="30pf" x="43.18" y="43.18" smashed="yes" rot="R270">
 <attribute name="NAME" x="44.45" y="43.18" size="0.6096" layer="25" font="vector" ratio="20" rot="R270" align="bottom-center"/>
-<attribute name="VALUE" x="41.656" y="43.18" size="0.6096" layer="27" font="vector" ratio="20" rot="R270" align="top-center"/>
+<attribute name="VALUE" x="41.656" y="43.18" size="0.6096" layer="25" font="vector" ratio="20" rot="R270" align="top-center"/>
 </element>
 <element name="FD1" library="SparkFun-Aesthetics" package="FIDUCIAL-MICRO" value="FIDUCIALUFIDUCIAL" x="2.54" y="50.8" smashed="yes"/>
 <element name="FD2" library="SparkFun-Aesthetics" package="FIDUCIAL-MICRO" value="FIDUCIALUFIDUCIAL" x="2.54" y="1.27" smashed="yes"/>
