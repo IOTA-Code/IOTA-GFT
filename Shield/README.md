@@ -22,6 +22,7 @@ The IOTA-GFT Arduino shield includes the GPS receiver and driver circuit for the
   - (1) 2N3906
 - Plastic zip tie (4")
 
+
 ## Licensing
 ------------
  This design is free: you can redistribute it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.  However, if you wish to make modifications, we add a further restriction.  If you are going to use this design to measure times for occultation observations, you must agree to not modify the design.
