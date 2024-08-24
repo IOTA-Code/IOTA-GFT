@@ -1317,13 +1317,7 @@ void setup()
   TCNT5 = 0;        // timer5: reset count
   timer5_ov = 0;    // timer5: reser overflow count
   TIFR5 = 0;        // timer5: reset all pending interrupts
-  TIMSK5 = (1 << TOIE5);   // timer 5: turn on overflow interrupts
-
-      // optionally turn on ICP capture
-  if (blnLogEXP)
-  {
-    TIMSK5 |= (1 << ICIE5);   // timer 5: turn on IC capture 
-  }
+  TIMSK5 = (1 << ICIE5) | (1 << TOIE5);   // timer 5: turn on Input Capture for EXP interrupts and overflow interrupts for Timer5
 
   // Timers begin...
   //

@@ -1,6 +1,6 @@
 # IOTA-GFT Device
 ----------------------------
-The IOTA-GFT device connects to the user's computer via USB and drives an LED which is attached to the front of the telescope.  The user's computer initiates sequences of LED "flashes" which illuminate a set of frames on recorded video sequences.  The IOTA-GFT device employs an internal GPS receiver to record the timing of the flash sequences and emit a log with timing information to the user's computer.  After video recording, this timing log is compared to the recorded video to determine the UTC times for each frame of the video recording.
+The IOTA-GFT device connects to the user's computer via USB and drives an LED which is attached to the front of the telescope.  The user's computer initiates sequences of LED "flashes" which illuminate a set of frames on recorded video sequences.  The IOTA-GFT device employs an internal GPS receiver to record the timing of the flash sequences and emit a log with timing information to the user's computer over the USB connection.  This same USB connection supplies power to the IOTA-GFT device. After video recording, this timing log is compared to the recorded video to determine the UTC times for each frame of the video recording.
 
 The IOTA-GFT device hardware includes the following components:
 - IOTA-GFT controller, USB cable, enclosure and USB cable
@@ -9,11 +9,14 @@ The IOTA-GFT device hardware includes the following components:
 
 This repository holds the Arduino firmware for the IOTA-GFT controller.  The IOTA-GFT controller combines an Arduino Mega 2560 with the IOTA-GFT shield.
 
-## Building the IOTA-Flasher software
--------------------------------------
+## Building and installing the IOTA-Flasher firware
+---------------------------------------------------
 Prerequisites:
 - Arduino IDE
 
+Build and Install Steps:
+
+Open the file "IOTA-GFT.ino" in the Arduino IDE.  Connect the IOTA-GFT device to your build computer via USB.  Then, in the Arudino IDE, connect to the IOTA-GFT device and upload the firmware (this will automatically start with a build before uploading).
 
 ## Licensing
 ------------

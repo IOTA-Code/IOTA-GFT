@@ -21,10 +21,7 @@
 
 // Misc
 //
-bool blnLogEnable = false;        // enable logging
-bool blnLogEXP = true;            // log EXP events
-bool blnLogToSerial = true;       // echo log to serial port
-
+bool blnLogEnable = true;        // enable logging
 
 //------------------------------------------------------------------------------
 // Buffer definitions.
@@ -128,7 +125,7 @@ bool LogTextWrite(char *strIn, int iCount)
 {
   // is logging enabled?
   //
-  if (!blnLogEnable || !blnLogToSerial)
+  if (!blnLogEnable)
   {
     return true;      // no error, just ignore the request
   }
@@ -211,7 +208,7 @@ bool LogFlushFull()
     // write the log buffer data 
     //
  
-    if (blnLogToSerial)
+    if (blnLogEnable)
     {
       // writing log buffer to serial port
       Serial.write(pBlock->data, 512);
@@ -256,7 +253,7 @@ bool LogFlushAll()
  
     // write out data from this partial block
     //
-    if (blnLogToSerial)
+    if (blnLogEnable)
     {
       // writing log buffer to serial port
       Serial.write(curBlock->data, curBlock->count);

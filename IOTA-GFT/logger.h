@@ -20,8 +20,6 @@ extern volatile uint16_t fifoTail;  // Only accessed by sd writer.
 // control variables
 //
 extern bool blnLogEnable;   // true => logging is enabled
-extern bool blnLogEXP;      // log EXP events
-extern bool blnLogToSerial;   // flase => serial port logging is enabled
 
 // data block definition
 //
