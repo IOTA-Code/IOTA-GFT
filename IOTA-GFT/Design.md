@@ -25,7 +25,9 @@ The IOTA-GFT firmware implements a simple state machine with five "operating mod
 The IOTA-GFT firmware follows the standard Arduino coding structure: a one-time setup() routine and a loop() routine which is exectued repeatedly.  The setup() routing initializes the GPS receiver, the Arduino timer/counters, the Arduino I/O ports and various other elements.  The loop() routine repeatedly checks for input from the GPS receiver and the USB serial from the recording computer.  In addition, the loop() routine regularly outputs pending timing log data to the recording computer. 
 
 ## Timers
-IOTA-GFT uses four of the Arduino timer/counters: Timer 2, Timer 3, Timer 4 and Timer 5.
+IOTA-GFT uses four of the Arduino timer/counters: Timer 0, Timer 2, Timer 3, Timer 4 and Timer 5.
+
+Timer 0 is the default Arduino timer for the delay() and millis() functions.  These functions are used in the gps communication code.
 
 Timer 2 is used in PWM mode to implement a software based intensity control for the LED.
 
