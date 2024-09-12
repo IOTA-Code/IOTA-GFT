@@ -2,18 +2,18 @@
 ----------------------------
 The IOTA-GFT project (IOTA GPS Flash Timer) implements a GPS based solution for adding UTC timestamps to sequential image captures (e.g. video).  The project includes both an IOTA-GFT hardware device and various software components for the computer used to capture the video data.
 
-The IOTA-GFT device connects to the video recording computer and drives an LED which is attached to the front of the optics.  The IOTA-GFT software on the recording computer controls the LED flash sequence from the device.  The recording computer software also logs the timing information from the GPS receiver in the IOTA-GFT device.  After recording a video sequence, IOTA-GFT software analyzes the video and timing log to determine the times for each video frame.
+The IOTA-GFT device connects to the video recording computer and drives an LED which is attached to the front of the optics.  The IOTA-GFT software on the recording computer controls the LED flash sequence from the device and logs the timing information from the IOTA-GFT device.  After recording a video sequence, this recording computer IOTA-GFT software analyzes the video and timing log to determine the times for each video frame.
 
 This repository includes the following components:
 - IOTA-GFT Device
     - Device Firmware
     - IOTA-GFT Shield PCB design
     - LED bracket components
-- Recording computer software
+- Recording computer software ( *** NOT YET ADDED TO THIS REPO ! )
     - ASCOM Driver for the IOTA-GFT device
     - FileStamper utility for inserting timestamps
 - Documentation
-    - Usage Guide(s)
+    - Usage Guide(s) - also TBD !
 
 ## Licensing
 ------------
