@@ -183,6 +183,14 @@ void FindTokens()
 // logging commands
 //    log [on | off ] - enable disable data logging (default = ON)
 //
+//  OUTPUTS:
+//    All commands return two sentences.  Both sentences will be terminated with a CRC code. 
+//    The first sentence is an echo of the command received.
+//    If the command succeeds, the second sentence will be one of two forms:
+//      [DONE] for commands which do not return a value (e.g. commands that set a value)
+//      [command: value] where command represents the type of value returned and value is the value returned.
+//    If the command fails, the second sentence will be of the form [ERROR: error description]
+//
 //======================================
 void ReadCMD()
 {
@@ -335,7 +343,7 @@ void ReadCMD()
     //
     if (strncmp(strCommand+idx,"device", 6) == 0)
     {
-      strcpy(strResponse,"[");
+      strcpy(strResponse,"[device: ");
       strcat(strResponse,strDeviceName);
       strcat(strResponse,"]");
       SendResponse();
@@ -346,7 +354,7 @@ void ReadCMD()
     //
     else if (strncmp(strCommand+idx,"version", 7) == 0)
     {
-      strcpy(strResponse,"[");
+      strcpy(strResponse,"[version: ");
       strcat(strResponse,strVersion);
       strcat(strResponse,"]");
       SendResponse();
@@ -357,7 +365,7 @@ void ReadCMD()
     //
     else if (strncmp(strCommand+idx,"status", 6) == 0)
     {
-      strcpy(strResponse,"[");
+      strcpy(strResponse,"[mode: ");
       switch(DeviceMode)
       {
         case InitMode :
@@ -413,11 +421,13 @@ void ReadCMD()
       } // end of "flash now"
 
       //  * Flash Duration [X] - get/set the current flash duration 
+      //
       else if (strncmp(strCommand+idx,"duration",8) == 0)
       {
         if (tokenCount < 3)
         {
-          // Get duration value
+          // Get duration value amd return it
+          //
           strcpy(strResponse,"[flash duration: ");
           itoa(Flash_Duration_Sec,strResponse+17,10);
           strcat(strResponse,"]");
@@ -425,7 +435,7 @@ void ReadCMD()
           return;
         }
 
-        // assume we are setting duration
+        // assume we are trying to set the flash duration
         //
         idx = idxToken[2];
 
@@ -451,7 +461,7 @@ void ReadCMD()
         }
         else
         {
-          strcpy(strResponse,"[ERROR: unknown flash mode.]");
+          strcpy(strResponse,"[ERROR: unknown flash mode]");
           SendResponse();
         }
         Serial.println(strDONE);
@@ -460,13 +470,15 @@ void ReadCMD()
       } // end of "flash duration "
 
       //  * Flash level [X] - get/set the current flash level 
+      //
       else if (strncmp(strCommand+idx,"level",5) == 0)
       {
         unsigned int sReg;
 
         if (tokenCount < 3)
         {
-          // Get level value
+          // Get flash level and return it
+          //
           strcpy(strResponse,"[flash level: ");
           itoa(flashlevel,strResponse+14,10);
           strcat(strResponse,"]");
@@ -474,7 +486,7 @@ void ReadCMD()
           return;
         }
 
-        // assume we are setting level
+        // assume we are trying to set the flash level
         //
         idx = idxToken[2];
 
@@ -489,7 +501,7 @@ void ReadCMD()
         }
         else if ((lTmp < 0) || (lTmp > 255))
         {
-          strcpy(strResponse,"[ERROR: flashlevel not in range (0,255).]");
+          strcpy(strResponse,"[ERROR: flashlevel not in range (0,255)]");
           SendResponse();
         }
 
@@ -501,6 +513,7 @@ void ReadCMD()
         //
 
         // disable interrupts to ensure LED state doesn't change before setting flashlevel
+        //
         sReg = SREG;
         noInterrupts();
         if (LED_ON)
@@ -516,11 +529,13 @@ void ReadCMD()
       } // end of "flash level "
 
       //  * Flash range [ X ] - get/set the current flash intensity range (0 .. 2)
+      //
       else if (strncmp(strCommand+idx,"range",5) == 0)
       {
         if (tokenCount < 3)
         {
-          // Get range value
+          // Get range value and return it
+          //
           strcpy(strResponse,"[flash range: ");
           itoa(flashrange,strResponse+14,10);
           strcat(strResponse,"]");
@@ -528,7 +543,7 @@ void ReadCMD()
           return;
         }
 
-        // assume we are setting range
+        // more than two parameters, assume we are setting flash range
         //
         idx = idxToken[2];
 
@@ -539,22 +554,16 @@ void ReadCMD()
         {
           flashrange = 0;
           setLEDtoLowRange();
-          strcpy(strResponse,"[low range]");
-          SendResponse();
         }
         else if (strCommand[idx] == '1')
         {
           flashrange = 1;
           setLEDtoMidRange();
-          strcpy(strResponse,"[mid range]");
-          SendResponse();
         }
         else if (strCommand[idx] == '2')
         {
           flashrange = 2;
           setLEDtoHighRange();
-          strcpy(strResponse,"[high range]");
-          SendResponse();
         }
         else
         {
@@ -569,57 +578,52 @@ void ReadCMD()
       } // end of "flash range "
 
       // Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
+      //
       else if (strncmp(strCommand+idx,"mode",4) == 0)
       {
         if (tokenCount < 3)
         {
-          // Get mode value
+          // Get flash mode and return it
+          //
           if (FlashMode == PPS)
           {
-            strcpy(strResponse,"[PPS flash mode.]");
-            SendResponse();
-            return;
+            strcpy(strResponse,"[flash mode: PPS]");
           }
           else if (FlashMode == EXP)
           {
-            strcpy(strResponse,"[EXP flash mode.]");
-            SendResponse();
-            return;
+            strcpy(strResponse,"[flash mode: EXP]");
           }
           else
           {
             strcpy(strResponse,"[ERROR: Unknown flash mode!]");
-            SendResponse();
-            return;
           }
+          SendResponse();
           return;
         }
 
-        // 3 parameters => assume we are trying to set the mode
+        // 3 parameters => assume we are trying to set the flash mode
         //
         idx = idxToken[2];
         if (strncmp(strCommand+idx,"pps",3) == 0)
         {
           FlashMode = PPS;
           Serial.println(strDONE);
-          return;
         }
         else if (strncmp(strCommand+idx,"exp",3) == 0)
         {
           FlashMode = EXP;
           Serial.println(strDONE);
-          return;
         }
         else
         {
           Serial.println(strParseError);
-          return;
         }
+        return;
 
       } // end of "flash mode"
 
 
-      else
+      else    // last catch-all segment of flash command parsing
       {
         strcpy(strResponse,"[ERROR: unknown command.]");
         SendResponse();
@@ -650,19 +654,21 @@ void ReadCMD()
       idx = idxToken[1];    // second token
 
       //  * pulse duration [X] - get/set the current value
+      //
       if (strncmp(strCommand+idx,"duration",8) == 0)
       {
         if (tokenCount < 3)
         {
-          // Get level value
-          strcpy(strResponse,"[pulse duration (us): ");
-          itoa(pulse_duration_us,strResponse+22,10);
+          // Get pulse duration value (microseconds) and return it
+          //
+          strcpy(strResponse,"[pulse duration:  ");
+          itoa(pulse_duration_us,strResponse+17,10);
           strcat(strResponse,"]");
           SendResponse();
           return;
         }
 
-        // assume we are setting duration
+        // assume we are setting pulse duration
         //
         idx = idxToken[2];
 
@@ -689,15 +695,16 @@ void ReadCMD()
       {
         if (tokenCount < 3)
         {
-          // Get level value
-          strcpy(strResponse,"[pulse interval: ");
+          // Get pulse interval value (milliseconds) and return it
+          //
+          strcpy(strResponse,"[pulse interval:  ");
           itoa(pulse_interval,strResponse+17,10);
           strcat(strResponse,"]");
           SendResponse();
           return;
         }
 
-        // assume we are setting interval
+        // assume we are setting pulse interval
         //
         idx = idxToken[2];
 
@@ -720,10 +727,17 @@ void ReadCMD()
 
       } // end of "pulse duration "
 
+      else    // last catch-all segment of pulse command parsing
+      {
+        strcpy(strResponse,"[ERROR: unknown command.]");
+        SendResponse();
+        return;
+      }
+
     } // end of pulse command logic
 
     //--------------------
-    // LED flash mode commands
+    // LED flash commands
     //    led [on | off ] - turn ON / OFF LED
     //
     else if (strncmp(strCommand+idx,"led", 3) == 0)
@@ -820,6 +834,13 @@ void ReadCMD()
         Serial.println(strDONE);
         return;
       }
+
+      else    // last catch-all segment of LED command parsing
+      {
+        strcpy(strResponse,"[ERROR: unknown command.]");
+        SendResponse();
+        return;
+      }
     } // end of LED commands
 
     //--------------------
@@ -863,7 +884,7 @@ void ReadCMD()
         return;
       }
 
-      else
+      else // end of log command parsing
       {
         Serial.println(strParseError);
         return;
@@ -871,7 +892,7 @@ void ReadCMD()
 
     } // end of log commands
 
-    else
+    else    // end of command parsing
     {
       strcpy(strResponse,"[ERROR: unknown command.]");
       SendResponse();

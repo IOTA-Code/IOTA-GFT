@@ -53,7 +53,7 @@ The LED intensity is controlled via two appoaches: a LED current control "driver
 ## USB I/O Device Commands
 The recording computer sends commands to the IOTA-GFT over the USB connection. Commands are terminated with a LF (linefeed) character ('\n').  The commands may optionally include an XOR checksum in the form of "*XX" where XX are two ASCII hex chars for the one byte checksum. Commands are NOT case sensitive.
 
-IOTA-GFT will return a response to all commands.  The response will include a simple one byte XOR checksum (two ASCII hex chars) at the end, followed by CR,LF ('\r\n').
+IOTA-GFT will return two sentences to all commands.  The first sentence will be an echo of the command sent to the device.  The second sentence will be a response to the command and include a simple one byte XOR checksum (two ASCII hex chars) at the end, followed by CR,LF ('\r\n'). Successful responses will be either the sentence "[DONE]" or "[command: value]".  Error responses will be of the form "[ERROR ...".  
 
 ### general commands
     status - get current device mode (e.g. TimeValid, WaitingForGPS, Syncing, etc)
