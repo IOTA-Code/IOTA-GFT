@@ -179,26 +179,30 @@ int len_logFlashFINAL = 17;
 int offset_logFlashFINAL = 1;
 int chksum_logFlashFINAL = 13;
 
-char logModeInit[] = "{MODE Init}*1F\r\n";
-int len_logModeInit = 16;
-int chksum_logModeInit = 12;
+// mode sentences
+//
+int lmode_logMode = 10;     // offset to start of led mode - to be set to 0 or 1
+int fmode_logMode = 12;    // offset to start of flash mode string 
 
-char logModeWaitingForGPS[] = "{MODE WaitingForGPS}*71\r\n";
-int len_logModeWaitingForGPS = 25;
-int chksum_logModeWaitingForGPS = 21;
+char logModeInit[] = "{MODE LED=L FFF Init}*1F\r\n";
+int len_logModeInit = 26;
+int chksum_logModeInit = 22;
 
-char logModeSync[] = "{MODE Sync}*02\r\n";
-int len_logModeSync = 16;
-int chksum_logModeSync = 12;
+char logModeWaitingForGPS[] = "{MODE LED=L FFF WaitingForGPS}*71\r\n";
+int len_logModeWaitingForGPS = 35;
+int chksum_logModeWaitingForGPS = 31;
 
-char logModeTimeValid[] = "{MODE TimeValid FFF}*XX\r\n";
-int len_logModeTimeValid = 25;
-int fmode_logModeTimeValid = 16;
-int chksum_logModeTimeValid = 21;
+char logModeSync[] = "{MODE LED=L FFF Sync}*02\r\n";
+int len_logModeSync = 26;
+int chksum_logModeSync = 22;
 
-char logModeFatal[] = "{MODE Fatal}*7B\r\n";
-int len_logModeFatal = 17;
-int chksum_logModeFatal = 13;
+char logModeTimeValid[] = "{MODE LED=L FFF TimeValid}*XX\r\n";
+int len_logModeTimeValid = 31;
+int chksum_logModeTimeValid = 27;
+
+char logModeFatal[] = "{MODE LED=L FFF Fatal}*7B\r\n";
+int len_logModeFatal = 27;
+int chksum_logModeFatal = 23;
 
 char logERROR[] = "{ERROR 0000}*XX\r\n";
 int len_logERROR = 17;
@@ -1380,63 +1384,94 @@ void loop()                     // run over and over again
   //
   if (blnReportMode)
   {
-      if (DeviceMode == TimeValid)
-      {
-        char *p = logModeTimeValid + fmode_logModeTimeValid;
+    char *pS = logModeFatal;            // pointer to start of sentence
+    int iChk = 0;                       // index of start of checksum chars
+    int lenS = 0;                       // length of entire sentence to output
+    char *p;
 
-        // report current flash mode
-        //
-        if (FlashMode == PPS)
-        {
-          *p++ = 'P';
-          *p++ = 'P';
-          *p = 'S';
-        }
-        else if (FlashMode == EXP)
-        {
-          *p++ = 'E';
-          *p++ = 'X';
-          *p = 'P';
-        }
-        else
-        {
-          *p++ = 'E';
-          *p++ = 'R';
-          *p = 'R';
-        }
+    // determine sentence offsets and pointers
+    //
+    if (DeviceMode == TimeValid)
+    {
+      pS = logModeTimeValid;
+      iChk = chksum_logModeTimeValid;
+      lenS = len_logModeTimeValid;
+    }
+    else if (DeviceMode == Syncing)
+    {
+      pS = logModeSync;
+      iChk = chksum_logModeSync;
+      lenS = len_logModeSync;
+    }
+    else if (DeviceMode == WaitingForGPS)
+    {
+      pS = logModeWaitingForGPS;
+      iChk = chksum_logModeWaitingForGPS;
+      lenS = len_logModeWaitingForGPS;
+    }
+    else if (DeviceMode == FatalError)
+    {
+      pS = logModeFatal;
+      iChk = chksum_logModeFatal;
+      lenS = len_logModeFatal;
+    }
+    else if (DeviceMode == InitMode)
+    {
+      pS = logModeInit;
+      iChk = chksum_logModeFatal;
+      lenS = len_logModeFatal;
+    }
+   
+    // update LED mode
+    //
+    p = pS + lmode_logMode;
+    if (LED_ON)
+    {
+      *p = '1';
+    }
+    else
+    {
+      *p = '0';
+    }
 
-        chk = chksum_b(logModeTimeValid,chksum_logModeTimeValid-1);   // compute checksum
-        btohexA(logModeTimeValid + chksum_logModeTimeValid, chk);
-        noInterrupts();                                 // disallow interruption of this sentence in the log
-        LogTextWrite(logModeTimeValid,len_logModeTimeValid);
-        interrupts();
-      }
-      else if (DeviceMode == Syncing)
-      {
-        noInterrupts();                                 // disallow interruption of this sentence in the log
-        LogTextWrite(logModeSync,len_logModeSync);
-        interrupts();
-      }
-      else if (DeviceMode == WaitingForGPS)
-      {
-        noInterrupts();                                 // disallow interruption of this sentence in the log
-        LogTextWrite(logModeWaitingForGPS,len_logModeWaitingForGPS);
-        interrupts();
-      }
-      else if (DeviceMode == FatalError)
-      {
-        noInterrupts();                                 // disallow interruption of this sentence in the log
-        LogTextWrite(logModeFatal,len_logModeFatal);
-        interrupts();
-      }
-      else if (DeviceMode == InitMode)
-      {
-        noInterrupts();                                 // disallow interruption of this sentence in the log
-        LogTextWrite(logModeInit,len_logModeInit);
-        interrupts();
-      }
-      blnReportMode = false;      // turn OFF until next NMEA set
-  }
+    // update Flash Mode
+    //
+    p = pS + fmode_logMode;
+    if (FlashMode == PPS)
+    {
+      *p++ = 'P';
+      *p++ = 'P';
+      *p = 'S';
+    }
+    else if (FlashMode == EXP)
+    {
+      *p++ = 'E';
+      *p++ = 'X';
+      *p = 'P';
+    }
+    else
+    {
+      *p++ = 'E';
+      *p++ = 'R';
+      *p = 'R';
+    }
+
+    // compute checksum
+    //
+    chk = chksum_b(pS,iChk-1);   // compute checksum
+    btohexA(pS + iChk, chk);
+
+    // output sentence (disallow interrupts)
+    //
+    noInterrupts();                                 // disallow interruption of this sentence in the log
+    LogTextWrite(pS,lenS);
+    interrupts();
+    
+    // done with this report of Mode
+    //
+    blnReportMode = false;      // turn OFF until next NMEA set
+
+  }  // end of check for reporting mode
 
   //******************************************************
   // Output pending data from logging buffer
