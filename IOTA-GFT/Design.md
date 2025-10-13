@@ -84,14 +84,15 @@ IOTA-GFT will output an operating mode sentence at the start of each set of NMEA
 
 The format (excluding the terminating CRLF):
 
-{MODE mmm fff}*XX
+{MODE LED=L fff mmm}*XX
+- L = current status of LED, 0=OFF, 1= ON
+- fff = current flash mode (PPS or EXP)
 - mmm = operating mode 
-- fff = current flash mode (only when operating mode = TimeValid)
 - XX = hex checksum in ASCII
 
 examples: 
-- {MODE Sync}*02
-- {MODE TimeValid PPS}*35
+- {MODE LED=0 PPS Sync}*11
+- {MODE LED=0 PPS TimeValid}*55
 
 At power-up, IOTA-GFT emits the following sentence to the logging stream:
 
