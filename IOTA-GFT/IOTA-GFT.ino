@@ -117,23 +117,24 @@ volatile unsigned long tk_PPS = 0;        // tick "time" of most recent PPS int
 
 //****************************
 // Flash variables
-//    There are two flashing modes: PPS and EXP.  In both cases, the LED is driven by a PWM cycle.
+//    There are three flashing modes: CLK, PPS and EXP.  In all cases, the LED is driven by a PWM cycle.
+//    CLK mode => Flashes are single LED On/Off sequences (via PWM) where the LED is turned ON immediately and turns off after X seconds according to the internal clock.
 //    PPS mode => Flashes are single LED On/Off sequences (via enabing/disabling PWM) where both the start and stop are closely aligned with a PPS signal.
 //    EXP mode => Flashes are a series of short duration LED On/Off pulses
 //    
 //
 volatile boolean LED_ON = false;      			// LED state
 
-volatile int PPS_Flash_Countdown_Sec;           // # of seconds remaining in a PPS flash
-                                                //  (countdown < 0) => not in PPS flash sequence
+volatile int PPS_Flash_Countdown_Sec;           // # of seconds remaining in a PPS or CLK flash
+                                                //  (countdown < 0) => not in PPS or CLK flash sequence
 
                                             // EXP flash sequences are short pulses separated by D EXP intervals for a total count of X pulses
-                                            //      sequence is enabled when pulse_count is non-zero
+                                            //      sequence is enabled when pulse_countdown is non-zero
                                             //
 int pulse_duration_us = 5000;               // duration of one shutter (EXP) pulse in EXP mode
 volatile int pulse_interval = 5;            // number of EXP events between pulses
-volatile uint16_t pulse_countdown;          // # of pulses left in sequence, 0 => no EXP flash sequence in progress
-volatile uint16_t pulse_interval_countdown; // # of EXP events until next pulse, 0=> flash (pulse) on next EXP event
+volatile int pulse_countdown;               // # of pulses left in sequence, 0 => no EXP flash sequence in progress, (< 0 => no sequence active)
+volatile int pulse_interval_countdown;      // # of EXP events until next pulse, 0=> flash (pulse) on next EXP event
 
 
 
@@ -226,34 +227,108 @@ ISR(TIMER3_COMPA_vect)
   unsigned long tk_LED;
   byte chk;
 
-  // turn OFF LED 
+  // should be either CLK or EXP flash mode
   //
-  OCR2A = OCR2B = 0;
-  LED_ON = false;
-
-  // log time flash went off
-  //
-  tk_LED = GetTicks(CNT4);              // time LED turned OFF
-
-  // turn OFF Timer 3
-  //
-  TCCR3B = (1 << WGM32);    // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
-
-  // note: interrupts are still disabled, so no issue with logging
-  //
-  if (pulse_countdown == 0)
+  if (FlashMode == CLK)
   {
-    ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
-    chk = chksum_b(logFlashFINAL,chksum_logFlashFINAL-1);   // compute checksum
-    btohexA(logFlashFINAL + chksum_logFlashFINAL, chk);
-    LogTextWrite(logFlashFINAL,len_logFlashFINAL);
+    // CLK mode
+    //  if done with seconds, turn OFF LED and log it
+    //  if not done, reset timer and continue
+
+    // check status of CLK flash sequence
+    //  countdown >= 0 => in a flash sequence
+    //  countdown == 0 => time to disable flash
+    //  countdown < 0 => not in flash sequence now
+
+    if (PPS_Flash_Countdown_Sec > 0)
+    {
+      // inside a flash sequence 
+	    //	reenable timer for another second of LED ON
+	    //
+	  
+      // start flash timer = timer 3
+      TCCR3B = (1 << WGM32);                  // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
+      TCNT3 = 0;                              // start count at 0
+      TIFR3 = 0;                              // clear all pending ints
+      OCR3A = 0xFFFF;                         // set duration to 1 second
+      TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
+      TIMSK3 |= (1 << OCIE3A);                // enable timer compare interrupt
+	  
+      // one less second left in this pulse
+      //
+      PPS_Flash_Countdown_Sec--;
+
+    }
+    else if (PPS_Flash_Countdown_Sec == 0)
+    {
+      // (Countdown == 0)  => flash should be disabled now
+      //
+
+      // if LED is ON, turn it OFF
+      // else do nothing
+      //
+      if (LED_ON)
+      {
+        // no more flashes left
+        //
+        OCR2A = OCR2B = 0;                    // LED OFF
+        tk_LED = GetTicks(CNT4);              // time LED turned OFF
+        LED_ON = false;
+
+        // LOG time LED went OFF
+        //
+        ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
+        chk = chksum_b(logFlashFINAL,chksum_logFlashFINAL-1);   // compute checksum
+        btohexA(logFlashFINAL + chksum_logFlashFINAL, chk);
+        LogTextWrite(logFlashFINAL,len_logFlashFINAL);
+
+
+      }
+      PPS_Flash_Countdown_Sec--;            //  decrement this count => no longer in flash sequence
+
+    }  // end of check for seconds remaining
+
   }
-  else
+  else if (FlashMode == EXP)
   {
-    ultohexA(logFlashOFF + offset_logFlashOFF,tk_LED);
-    chk = chksum_b(logFlashOFF,chksum_logFlashOFF-1);   // compute checksum
-    btohexA(logFlashOFF + chksum_logFlashOFF, chk);
-    LogTextWrite(logFlashOFF,len_logFlashOFF);
+    // EXP mode 
+    //  end this pulse , update pulse count
+
+    // turn OFF LED 
+    //
+    OCR2A = OCR2B = 0;
+    LED_ON = false;
+
+    // log time flash went off
+    //
+    tk_LED = GetTicks(CNT4);              // time LED turned OFF
+
+    // turn OFF Timer 3
+    //
+    TCCR3B = (1 << WGM32);    // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
+
+    // note: interrupts are still disabled, so no issue with logging
+    //
+    if (pulse_countdown == 0)
+    {
+      ultohexA(logFlashFINAL + offset_logFlashFINAL,tk_LED);
+      chk = chksum_b(logFlashFINAL,chksum_logFlashFINAL-1);   // compute checksum
+      btohexA(logFlashFINAL + chksum_logFlashFINAL, chk);
+      LogTextWrite(logFlashFINAL,len_logFlashFINAL);
+
+      // all done with this pulse sequence now
+      //
+      pulse_countdown = -1;
+
+    }
+    else
+    {
+      ultohexA(logFlashOFF + offset_logFlashOFF,tk_LED);
+      chk = chksum_b(logFlashOFF,chksum_logFlashOFF-1);   // compute checksum
+      btohexA(logFlashOFF + chksum_logFlashOFF, chk);
+      LogTextWrite(logFlashOFF,len_logFlashOFF);
+    }
+
   }
   
 } // end of LED_done_interrupt
@@ -850,7 +925,7 @@ ISR( TIMER5_CAPT_vect)
       LED_ON = true;
 
       // start flash timer = timer 3
-      TCCR3B = 0;                             // no source => clock stopped
+      TCCR3B = (1 << WGM32);                  // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
       TCNT3 = 0;                              // start count at 0
       TIFR3 = 0;                              // clear all pending ints
       OCR3A = OCR3A_pulse;                    // set duration   
@@ -1188,8 +1263,8 @@ void setup()
   // initializing now...
   //
   DeviceMode = InitMode;
-  FlashMode = PPS;
-  pulse_countdown = 0;          // no EXP sequence active
+  FlashMode = CLK;
+  pulse_countdown = -1;          // no EXP sequence active
   pulse_interval_countdown = 0;
 
   // set PIN modes
@@ -1272,7 +1347,7 @@ void setup()
   LED_ON = false;
                       
  
-  //  Timer 3 - for LED flash duration in EXP mode only
+  //  Timer 3 - for LED flash duration in NOW mode and EXP mode
   //    CTC mode 4
   //    prescaler OFF => timer OFF for now / but will be set to f/256 for actual timing
   //                      f/256 => 64khz => us/16 = value for OCR3A register, 16us minimum, 1024ms maximum
@@ -1440,7 +1515,13 @@ void loop()                     // run over and over again
     // update Flash Mode
     //
     p = pS + fmode_logMode;
-    if (FlashMode == PPS)
+    if (FlashMode == CLK)
+    {
+      *p++ = 'C';
+      *p++ = 'L';
+      *p = 'K';
+    }
+    else if (FlashMode == PPS)
     {
       *p++ = 'P';
       *p++ = 'P';

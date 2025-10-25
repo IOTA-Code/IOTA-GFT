@@ -40,14 +40,14 @@
 
   //****************************************
   // Flashing Modes
-  //  PPS mode => flash on PPS signal for X whole seconds
+  //  CLK mode => flash now and turn off after X seconds by internal clock counts
+  //  PPS mode => flash on next PPS signal and off after X PPS signals
   //	EXP mode => short duration flashes on EXP interrupt (exposure signal)
-  //  LED mode => manual control of LED
   //
-  //	fEventDefined => True if an future event definition active
   //
   enum FlashingMode
   {
+    CLK,
     PPS,
     EXP
   };
@@ -89,7 +89,7 @@
 
   extern int pulse_duration_us;                         // duration of one shutter pulse (microseconds)
   extern volatile int pulse_interval;                   // time between pulses (miliseconds)
-  extern volatile uint16_t pulse_count;                 // # of pulses
+  extern volatile int pulse_countdown;             // # of pulses left in EXP sequence, 0 => no EXP flash sequence in progress
 
 
   extern volatile bool time_UTC;                  // true => time is currently UTC , false => time is currently GPS

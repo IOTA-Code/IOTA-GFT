@@ -413,11 +413,68 @@ void ReadCMD()
       //
       if (strncmp(strCommand+idx,"now",3) == 0)
       {
-        // turn on flash now
+        unsigned long tk_LED;
+        byte chk;
+
+        // enable flash sequence
         //
+
+        if (FlashMode == CLK)
+        {
+          // CLK flash mode
+          //  turn ON led
+          //  set countdown for # of seconds
+          //  enable timer 3 for countdown
+          //  log time of LED ON
+          //
+
+          PPS_Flash_Countdown_Sec = Flash_Duration_Sec - 1;
+	  
+          // disable interrupts to ensure accurate time for LED ON
+          //
+          noInterrupts();
+
+          // start flash timer = timer 3
+          TCCR3B = (1 << WGM32);                  // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
+          TCNT3 = 0;                              // start count at 0
+          TIFR3 = 0;                              // clear all pending ints
+          OCR3A = 0xFFFF;                         // set duration to 1 second
+          TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
+          TIMSK3 |= (1 << OCIE3A);                // enable timer compare interrupt
+         
+          // turn on LED
+          //
+          OCR2A = OCR2B = flashlevel;
+          LED_ON = true;
+
+          // log time LED went ON
+          //
+          tk_LED = GetTicks(CNT4);              // time LED turned ON
+          ultohexA(logFlashON + offset_logFlashON,tk_LED);
+          chk = chksum_b(logFlashON,chksum_logFlashON-1);   // compute checksum
+          btohexA(logFlashON + chksum_logFlashON, chk);
+          LogTextWrite(logFlashON,len_logFlashON);
+
+          // interrupts back on again...
+          //
+          interrupts();
+
+        }
+        else if (FlashMode == PPS)
+        {
+          //  just set the countdown to enable PPS based flash sequence
+          //
+          PPS_Flash_Countdown_Sec = Flash_Duration_Sec;
+        }
+        else if (FlashMode == EXP)
+        {
+          pulse_countdown = Pulse_Count;          
+        }
+
         Serial.println(strDONE);
-        PPS_Flash_Countdown_Sec = Flash_Duration_Sec;
         return;
+
+
       } // end of "flash now"
 
       //  * Flash Duration [X] - get/set the current flash duration 
@@ -451,7 +508,11 @@ void ReadCMD()
 
         // set the value
         //
-        if (FlashMode == PPS)
+        if (FlashMode == CLK)
+        {
+          Flash_Duration_Sec = lTmp;          
+        }
+        else if (FlashMode == PPS)
         {
           Flash_Duration_Sec = lTmp;          
         }
@@ -577,7 +638,7 @@ void ReadCMD()
 
       } // end of "flash range "
 
-      // Flash Mode [PPS | EXP ] - get/set the current flash mode (PPS or EXP)
+      // Flash Mode [CLK | PPS | EXP ] - get/set the current flash mode 
       //
       else if (strncmp(strCommand+idx,"mode",4) == 0)
       {
@@ -585,6 +646,10 @@ void ReadCMD()
         {
           // Get flash mode and return it
           //
+          if (FlashMode == CLK)
+          {
+            strcpy(strResponse,"[flash mode: CLK]");
+          }
           if (FlashMode == PPS)
           {
             strcpy(strResponse,"[flash mode: PPS]");

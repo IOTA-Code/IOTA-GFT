@@ -39,9 +39,9 @@ Timer 4 and Timer 5 are synchronized system timer counters running at 16 mhz.  T
 All information which is output to the recording computer (via USB serial) is first placed in an internal buffer.  The buffer is output to the recording computer during each pass through the main loop() routine.  Most of the logging sentences will be written to the buffer without interruption.  However, logging based on PPS and EXP interrupts might "interrupt" another sentence in the log.
 
 ## Flash Operation
-The IOTA-GFT is designed to support two flash modes: PPS and EXP.  The majority of users will use PPS flashes.  The EXP mode is currently in development.  It is aimed at cameras which provide an output signal marking the beginning of an exposure.  
+The IOTA-GFT is designed to support three flash modes: CLK, PPS and EXP.  The majority of users will use CLK flashes.  The EXP mode is currently in development.  It is aimed at cameras which provide an output signal marking the beginning of an exposure.  
 
-IOTA-GFT operates in PPS flash mode by default.  Flash sequences are specified as X seconds long.
+IOTA-GFT operates in CLK flash mode by default.  Flash sequences are specified as X seconds long.  When a "flash now" command is sent to the device in CLK mode, the LED turns on immediately and turns OFF X seconds later according to the internal device clock.
 
 In either flash mode, the device can be programmed to a wide range of flash intensity values.
 
@@ -66,7 +66,7 @@ IOTA-GFT will return two sentences to all commands.  The first sentence will be 
     flash duration X - X is seconds in PPS mode or starting number of pulses in EXP mode
     flash level X - get/set the current flash intensity level [ 0 to 255]
     flash range [X] -get/set the current range of flash intensity to low, medium or high [ 0 to 2]
-    flash mode [pps | exp ] - get/set the current flash mode (PPS or EXP)
+    flash mode [clk | pps | exp ] - get/set the current flash mode (CLK, PPS or EXP)
 
     pulse duration [X] - get/set the flash pulse duration (us)
     pulse interval [X] - get/set the flash pulse interval = # of exp interrupts between pulse sequences
@@ -86,13 +86,13 @@ The format (excluding the terminating CRLF):
 
 {MODE LED=L fff mmm}*XX
 - L = current status of LED, 0=OFF, 1= ON
-- fff = current flash mode (PPS or EXP)
+- fff = current flash mode (CLK, PPS or EXP)
 - mmm = operating mode 
 - XX = hex checksum in ASCII
 
 examples: 
-- {MODE LED=0 PPS Sync}*11
-- {MODE LED=0 PPS TimeValid}*55
+- {MODE LED=0 CLK Sync}*11
+- {MODE LED=0 CLK TimeValid}*55
 
 At power-up, IOTA-GFT emits the following sentence to the logging stream:
 
