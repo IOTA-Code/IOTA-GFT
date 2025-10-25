@@ -111,16 +111,9 @@ volatile int offsetUTC_Current = -1;      // current/valid GPS-UTC offset
 
 
 //***************
-// PPS event
+// PPS globals
 //
-volatile unsigned long tk_PPS;        // tick "time" of most recent PPS int
-
-
-volatile boolean pps_led_state = false;       // current state of on-board LED
-volatile unsigned long pps_time;
-volatile unsigned long pps_count = 0;         // # of pps ints since power on
-volatile boolean pps_new = false;
-volatile boolean pps_flash = false;           // true IFF LED was flashed with this PPS
+volatile unsigned long tk_PPS = 0;        // tick "time" of most recent PPS int
 
 //****************************
 // Flash variables
@@ -379,6 +372,12 @@ ISR( TIMER4_CAPT_vect)
   //
   timePrev = tk_PPS;
   tk_PPS = timeCurrent;
+  if (timePrev == 0)
+  {
+    // startup -> set timePrev to expected value to avoid meaningless error check on first PPS interval
+    //
+    timePrev = timeCurrent - Timer_Second;
+  }
 
   // log the PPS time
   //
@@ -1209,6 +1208,7 @@ void setup()
   TCCR2B = 0;//reset the register
   setLEDtoHighRange();
   OCR2A = OCR2B = 255;
+  
 
   // flashpinA and flashpinB are PWM outputs (Timer 2 OC2A and OC2B output respectively)
   // We start the pins as inputs so that the LED cannot turn on until we are through setting up the PWM
@@ -1265,9 +1265,12 @@ void setup()
 
   // Note: fpwm = fclk/(N·2·255)  --> N = pre-scaler factor
   //            = 16M /(1·2·255) = 31.36 kHz
-                        
-  OCR2A  = 0;         // duty cycle value
-  OCR2B  = 0;         // duty cycle value
+
+  // turn OFF LED 
+  //
+  OCR2A = OCR2B = 0;
+  LED_ON = false;
+                      
  
   //  Timer 3 - for LED flash duration in EXP mode only
   //    CTC mode 4
