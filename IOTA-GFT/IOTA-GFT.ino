@@ -249,8 +249,8 @@ ISR(TIMER3_COMPA_vect)
       // start flash timer = timer 3
       TCCR3B = (1 << WGM32);                  // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
       TCNT3 = 0;                              // start count at 0
-      TIFR3 = 0;                              // clear all pending ints
       OCR3A = 0xFFFF;                         // set duration to 1 second
+      TIFR3 = 0xFF;                           // clear any pending interrupts
       TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
       TIMSK3 |= (1 << OCIE3A);                // enable timer compare interrupt
 	  
@@ -927,8 +927,8 @@ ISR( TIMER5_CAPT_vect)
       // start flash timer = timer 3
       TCCR3B = (1 << WGM32);                  // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
       TCNT3 = 0;                              // start count at 0
-      TIFR3 = 0;                              // clear all pending ints
       OCR3A = OCR3A_pulse;                    // set duration   
+      TIFR3 = 0xFF;                           // clear any pending interrupts
       TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
       TIMSK3 |= (1 << OCIE3A);                // enable timer compare interrupt
       
@@ -1356,10 +1356,12 @@ void setup()
   //
   sReg = SREG;
   noInterrupts();
+  OCR3A = 0xFFFF;           // set duration to 1 second
   TCCR3A = 0;               // compare output disconnected, WGM bits 1 and 0 set to 0
   TCCR3B = (1 << WGM32);    // CTC3 set => mode 4 AND CS3x = 000 (no input => clock stopped)
   PRR1 &= ~(1 << PRTIM3);   // disable power reduction for timer 3 to enable timer
-  SREG = sReg;              // back on again
+  TIFR3 = 0xFF;             // clear any pending interrupts
+  SREG = sReg;              // interrupts back on again
 
   //  Timer 4 - used to capture times of 1pps interrrupts
   //    ICP4 pin (digital 49) set to input

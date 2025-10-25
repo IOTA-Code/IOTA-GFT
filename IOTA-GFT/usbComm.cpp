@@ -436,11 +436,11 @@ void ReadCMD()
 
           // start flash timer = timer 3
           TCCR3B = (1 << WGM32);                  // CTC set => mode 4 AND CS = 0 (no input => clock stopped)
-          TCNT3 = 0;                              // start count at 0
-          TIFR3 = 0;                              // clear all pending ints
           OCR3A = 0xFFFF;                         // set duration to 1 second
-          TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
           TIMSK3 |= (1 << OCIE3A);                // enable timer compare interrupt
+          TCNT3 = 0;                              // start count at 0
+          TIFR3 = 0xFF;                           // clear any pending interrupts
+          TCCR3B |= (1 << CS32);                  // f/256 clock source => timer is ON now   
          
           // turn on LED
           //
